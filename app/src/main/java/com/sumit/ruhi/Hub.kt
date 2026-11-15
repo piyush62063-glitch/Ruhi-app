@@ -24,7 +24,7 @@ object Hub {
         main.post { onChange?.invoke() }
     }
 
-    fun setState(s: Int) {
+    @JvmName("applyState") fun setState(s: Int) {
         state = s
         changed()
     }
