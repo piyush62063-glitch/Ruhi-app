@@ -4,20 +4,23 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
 object Brain {
-    private val models = listOf("gemini-flash-latest", "gemini-flash-lite-latest")
+    private val models = listOf("gemini-flash-lite-latest", "gemini-flash-latest")
+    private val ttsModels = listOf("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")
 
-    private fun post(model: String, key: String, body: String): Pair<Int, String> {
+    private fun post(model: String, key: String, body: String, readMs: Int): Pair<Int, String> {
         val c = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
             .openConnection() as HttpURLConnection
         c.requestMethod = "POST"
-        c.connectTimeout = 15000
-        c.readTimeout = 30000
+        c.connectTimeout = 10000
+        c.readTimeout = readMs
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json")
         c.setRequestProperty("x-goog-api-key", key)
@@ -27,43 +30,79 @@ object Brain {
         return code to s
     }
 
+    private fun extract(s: String): String {
+        val parts = JSONObject(s).optJSONArray("candidates")?.optJSONObject(0)
+            ?.optJSONObject("content")?.optJSONArray("parts") ?: return ""
+        val sb = StringBuilder()
+        for (i in 0 until parts.length()) sb.append(parts.optJSONObject(i)?.optString("text", "") ?: "")
+        return sb.toString().trim()
+    }
+
     fun ask(key: String, name: String, hist: List<Pair<Boolean, String>>): String {
         if (key.isBlank()) return "Pehle Settings mein apni Gemini key daalo, phir baat karte hain."
         val contents = JSONArray()
-        hist.takeLast(10).forEach { (isUser, text) ->
+        hist.takeLast(8).forEach { (isUser, text) ->
             contents.put(JSONObject()
                 .put("role", if (isUser) "user" else "model")
                 .put("parts", JSONArray().put(JSONObject().put("text", text))))
         }
-        val sys = "Tum Ruhi ho, $name ki dost aur AI assistant. Hinglish mein 1-3 chhoti line mein, " +
-            "friendly aur thoda funny jawab do. Jawab bolke sunaya jayega, isliye markdown aur zyada emoji mat use karo."
+        val sys = "Tum Ruhi ho, $name ki pyaari, caring aur masti wali dost aur AI assistant. " +
+            "Ladki ki tarah, Hinglish mein, apnepan se baat karo, kabhi kabhi $name naam se bulao. " +
+            "Jawab 1-2 chhoti line mein do, thoda mazaak aur care ke saath. " +
+            "Jawab bolke sunaya jayega, isliye markdown, bullet aur emoji bilkul mat use karo. " +
+            "Phone ke kaam (youtube, call, whatsapp, maps, app kholna) tum kar sakti ho, user ko bolne ko kaho."
         val body = JSONObject()
             .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", sys))))
             .put("contents", contents).toString()
         var last = 0
-        for (m in models) {
-            for (attempt in 0..1) {
+        for (pass in 0..1) {
+            for (m in models) {
                 try {
-                    val (code, s) = post(m, key, body)
+                    val (code, s) = post(m, key, body, 20000)
                     last = code
                     if (code == 200) {
-                        val t = JSONObject(s).getJSONArray("candidates").getJSONObject(0)
-                            .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                        return t.trim()
+                        val t = extract(s)
+                        if (t.isNotBlank()) return t
+                        last = -2
+                    } else if (code == 400 || code == 403) {
+                        return "Key ya request mein dikkat hai (error $code). Settings mein key check karo."
                     }
-                    if (code in listOf(429, 500, 503)) { Thread.sleep(1000); continue }
-                    break
-                } catch (e: Exception) {
+                } catch (e: IOException) {
                     last = -1
-                    break
+                } catch (e: Exception) {
+                    last = -3
                 }
             }
         }
         return when (last) {
-            400, 403 -> "Key galat lag rahi hai (error $last). Settings mein check karo."
-            -1 -> "Internet ya network ki dikkat hai. Check karke phir try karo."
+            -1 -> "Internet nahi mil raha. Net check karke phir bolo."
+            -2, -3 -> "Gemini ne jawab nahi diya, ek baar phir bolo."
             else -> "Gemini abhi busy hai (error $last). Thodi der baad phir bolo."
         }
+    }
+
+    /** Gemini TTS, voice Kore. Returns raw 16-bit mono PCM at 24000 Hz, or null on failure. */
+    fun speechPcm(key: String, text: String): ByteArray? {
+        if (key.isBlank()) return null
+        val say = "Say in a soft, warm, friendly tone: " + text.take(400)
+        val body = JSONObject()
+            .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", say)))))
+            .put("generationConfig", JSONObject()
+                .put("responseModalities", JSONArray().put("AUDIO"))
+                .put("speechConfig", JSONObject().put("voiceConfig", JSONObject()
+                    .put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
+            .toString()
+        for (m in ttsModels) {
+            try {
+                val (code, s) = post(m, key, body, 30000)
+                if (code == 200) {
+                    val d = JSONObject(s).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
+                        ?.optJSONArray("parts")?.optJSONObject(0)?.optJSONObject("inlineData")?.optString("data", "") ?: ""
+                    if (d.isNotBlank()) return Base64.decode(d, Base64.DEFAULT)
+                }
+            } catch (e: Exception) { }
+        }
+        return null
     }
 }
 

@@ -181,6 +181,12 @@ class Vm(private val act: MainActivity) {
         msgs.add(false to r)
         persist()
         lastReply = r
-        if (voiceOn) { phase = "speak"; act.speak(r) } else phase = "idle"
+        if (!voiceOn) { phase = "idle"; return }
+        phase = "speak"
+        scope.launch {
+            val pcm = withContext(Dispatchers.IO) { Brain.speechPcm(key, r) }
+            if (phase != "speak") return@launch
+            if (pcm != null) act.playPcm(pcm) else act.speak(r)
+        }
     }
 }

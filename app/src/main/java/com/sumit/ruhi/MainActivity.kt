@@ -1,6 +1,11 @@
 package com.sumit.ruhi
 
 import android.Manifest
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.os.Handler
+import android.os.Looper
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -42,7 +47,44 @@ class MainActivity : ComponentActivity() {
 
     fun pickPhoto() { picker.launch("image/*") }
     fun speak(t: String) { tts?.speak(t, TextToSpeech.QUEUE_FLUSH, null, "ruhi") }
-    fun stopSpeak() { tts?.stop() }
+    private var track: AudioTrack? = null
+    private val h = Handler(Looper.getMainLooper())
+    private val done = Runnable {
+        try { track?.release() } catch (e: Exception) { }
+        track = null
+        vm.afterSpeak()
+    }
+
+    fun playPcm(pcm: ByteArray) {
+        stopSpeak()
+        try {
+            val tr = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(24000)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(pcm.size)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            tr.write(pcm, 0, pcm.size)
+            track = tr
+            tr.play()
+            h.postDelayed(done, pcm.size / 48L + 300L)
+        } catch (e: Exception) {
+            vm.afterSpeak()
+        }
+    }
+
+    fun stopSpeak() {
+        h.removeCallbacks(done)
+        try { track?.stop() } catch (e: Exception) { }
+        try { track?.release() } catch (e: Exception) { }
+        track = null
+        tts?.stop()
+    }
 
     override fun onResume() { super.onResume(); foreground = true }
     override fun onPause() { foreground = false; super.onPause() }
