@@ -34,19 +34,26 @@ class MainActivity : Activity() {
     private var thinking = false
     private var fails = 0
     private var sub = 0
+    private lateinit var mic: MicView
+    private lateinit var wave: WaveView
+    private lateinit var overlay: FrameLayout
+    private lateinit var hero: FrameLayout
+    private lateinit var fade: View
+    private var heroBmp: Bitmap? = null
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Store.init(this)
         window.statusBarColor = BG; window.navigationBarColor = BG
         speaker = Speaker(this) { if (live && !thinking) listen() else if (!live) idle() }
-        orb = OrbView(this); status = tv("Tap to talk", 16f, DIM)
+        orb = OrbView(this); status = tv("Tap to Talk", 18f, Color.WHITE); mic = MicView(this) { orb.state }; wave = WaveView(this) { orb.state }; overlay = buildOverlay()
         charImg = ImageView(this); avatar = ImageView(this)
         homeView = buildHome()
         val root = FrameLayout(this); root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#0A0A1F"), Color.parseColor("#1A1040"), Color.parseColor("#0A0A1F"))); root.clipChildren = false
         body = FrameLayout(this)
         root.addView(body, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(96) })
         root.addView(buildNav(), FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(10)) })
+        root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         root.setOnApplyWindowInsetsListener { v, i -> v.setPadding(0, i.systemWindowInsetTop, 0, i.systemWindowInsetBottom); i }
         setContentView(root)
         refreshHome(); show(0)
@@ -131,41 +138,114 @@ class MainActivity : Activity() {
         return n
     }
 
+    private val bundled = listOf("Lavender morning", "Midnight hoodie", "Neon city")
+
+    private fun loadChar(c: Int): Bitmap? = try {
+        if (c >= 100) assets.open("chars/b${c - 100}.jpg").use { BitmapFactory.decodeStream(it) }
+        else if (c >= 0) BitmapFactory.decodeFile(File(filesDir, "c$c.jpg").path) else null
+    } catch (e: Exception) { null }
+
     private fun buildHome(): View {
-        val sv = ScrollView(this)
-        val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.gravity = Gravity.CENTER_HORIZONTAL
-        l.setPadding(dp(16), dp(24), dp(16), dp(16))
-        l.addView(tv("Namaste, Sumit 💜", 24f, Color.WHITE, true))
-        l.addView(tv("Main Ruhi, sirf tumhari", 14f, DIM))
-        charImg.scaleType = ImageView.ScaleType.FIT_CENTER
-        l.addView(charImg, LinearLayout.LayoutParams(-1, dp(220)))
-        l.addView(orb, LinearLayout.LayoutParams(dp(260), dp(260)))
-        status.gravity = Gravity.CENTER
-        l.addView(status)
-        l.addView(btn("🎤  Tap to Talk") { toggle() })
+        val sv = ScrollView(this); sv.isVerticalScrollBarEnabled = false
+        val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.setPadding(0, 0, 0, dp(24))
+        hero = FrameLayout(this); hero.clipChildren = true
+        charImg.scaleType = ImageView.ScaleType.MATRIX
+        hero.addView(charImg, FrameLayout.LayoutParams(-1, -1))
+        fade = View(this)
+        fade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.TRANSPARENT, Color.parseColor("#0A0A1F")))
+        hero.addView(fade, FrameLayout.LayoutParams(-1, dp(190), Gravity.BOTTOM))
+        hero.addView(tv("Namaste, Sumit 💜", 26f, Color.WHITE, true).apply { setShadowLayer(10f, 0f, 2f, Color.BLACK) },
+            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(20), dp(24), 0, 0) })
+        hero.addView(tv("Main Ruhi, sirf tumhari", 14f, Color.parseColor("#E6DFFF")).apply { setShadowLayer(8f, 0f, 2f, Color.BLACK) },
+            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(20), dp(62), 0, 0) })
+        l.addView(hero, LinearLayout.LayoutParams(-1, dp(380)))
+        mic.setOnClickListener { hap(mic); micTap() }
+        l.addView(mic, LinearLayout.LayoutParams(dp(140), dp(140)).apply { topMargin = -dp(75); gravity = Gravity.CENTER_HORIZONTAL })
+        l.addView(tv("Tap to Talk", 24f, Color.WHITE, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = -dp(4) })
+        l.addView(wave, LinearLayout.LayoutParams(-1, dp(34)).apply { setMargins(dp(40), dp(8), dp(40), dp(8)) })
+        val bar = LinearLayout(this); bar.gravity = Gravity.CENTER_VERTICAL; bar.setPadding(dp(8), dp(8), dp(8), dp(8))
+        bar.background = GradientDrawable().apply { setColor(Color.parseColor("#B0151530")); cornerRadius = dp(34).toFloat(); setStroke(dp(1), Color.parseColor("#66B58CFF")) }
+        bar.addView(tv("✨", 18f).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#2A1F55")) } }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        val e = EditText(this); e.hint = "Ask me anything..."; e.setHintTextColor(DIM); e.setTextColor(Color.WHITE); e.setSingleLine()
+        e.background = null; e.setPadding(dp(12), 0, dp(8), 0)
+        bar.addView(e, LinearLayout.LayoutParams(0, -2, 1f))
+        val send = tv("➤", 20f).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { setColor(PUR); cornerRadius = dp(18).toFloat() } }
+        send.setOnClickListener { hap(send); val q = e.text.toString().trim(); if (q.isNotEmpty()) { e.setText(""); ask(q); sub = 0; show(1) } }
+        bar.addView(send, LinearLayout.LayoutParams(dp(56), dp(44)))
+        l.addView(bar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(16), dp(4), dp(16), dp(14)) })
+        val r = LinearLayout(this)
+        fun fc(ic: String, t: String, s: String, f: () -> Unit) {
+            val c = LinearLayout(this); c.orientation = LinearLayout.VERTICAL; c.gravity = Gravity.CENTER; c.setPadding(dp(6), dp(12), dp(6), dp(12))
+            c.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor("#4A5B3FB0"), Color.parseColor("#B0140F3A"))).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.parseColor("#66B58CFF")) }
+            c.addView(tv(ic, 20f).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#2A1F55")) } }, LinearLayout.LayoutParams(dp(40), dp(40)))
+            c.addView(tv(t, 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
+            c.addView(tv(s, 11f, DIM).apply { gravity = Gravity.CENTER })
+            c.setOnClickListener { hap(c); f() }
+            r.addView(c, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+        }
+        fc("💬", "Chat", "Get instant answers") { sub = 0; show(1) }
+        fc("🧑", "Characters", "Change her look") { go(3) }
+        fc("🎨", "Orbs", "10 glowing styles") { go(2) }
+        l.addView(r, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(12), 0, dp(12), 0) })
         sv.addView(l); return sv
     }
 
     private fun refreshHome() {
         orb.style = Store.orb
-        val f = File(filesDir, "c${Store.chr}.jpg")
-        if (Store.chr >= 0 && f.exists()) {
-            val bmp = BitmapFactory.decodeFile(f.path)
-            charImg.setImageBitmap(bmp); avatar.setImageBitmap(bmp); charImg.visibility = View.VISIBLE
-            floatAnim?.cancel(); floatAnim = android.animation.ObjectAnimator.ofFloat(charImg, "translationY", 0f, -dp(8).toFloat()).apply { duration = 2200; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE; start() }
-            orb.layoutParams = LinearLayout.LayoutParams(dp(150), dp(150))
+        val bmp = loadChar(Store.chr)
+        val lp = hero.layoutParams
+        floatAnim?.cancel(); charImg.scaleX = 1f; charImg.scaleY = 1f
+        if (bmp != null) {
+            heroBmp = bmp; charImg.setImageBitmap(bmp); avatar.setImageBitmap(bmp)
+            fade.visibility = View.VISIBLE; lp.height = dp(380)
+            charImg.post {
+                fitTop()
+                floatAnim = android.animation.ObjectAnimator.ofFloat(charImg, "scaleX", 1f, 1.035f).apply {
+                    duration = 2600; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE
+                    addUpdateListener { charImg.scaleY = charImg.scaleX }; start()
+                }
+            }
         } else {
-            charImg.setImageDrawable(null); avatar.setImageDrawable(null); charImg.visibility = View.GONE
-            orb.layoutParams = LinearLayout.LayoutParams(dp(280), dp(280))
+            heroBmp = null; charImg.setImageDrawable(null); avatar.setImageDrawable(null); fade.visibility = View.GONE; lp.height = dp(120)
         }
+        hero.layoutParams = lp
     }
+
+    private fun fitTop() {
+        val b = heroBmp ?: return
+        val w = charImg.width.toFloat(); val h = charImg.height.toFloat()
+        if (w == 0f || h == 0f) return
+        val s = maxOf(w / b.width, h / b.height); val m = Matrix(); m.setScale(s, s)
+        m.postTranslate((w - b.width * s) / 2f, -(b.height * s - h) * 0.12f)
+        charImg.imageMatrix = m; charImg.pivotX = w / 2f; charImg.pivotY = h
+    }
+
+    private fun buildOverlay(): FrameLayout {
+        val f = FrameLayout(this); f.visibility = View.GONE; f.isClickable = true
+        f.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#F2090918"), Color.parseColor("#F21A0F3D")))
+        f.addView(orb, FrameLayout.LayoutParams(dp(320), dp(320), Gravity.CENTER).apply { bottomMargin = dp(60) })
+        status.gravity = Gravity.CENTER
+        f.addView(status, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER).apply { topMargin = dp(270) })
+        val r = LinearLayout(this); r.gravity = Gravity.CENTER
+        r.addView(btn("▾  Minimize") { showOverlay(false) }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
+        r.addView(btn("⏹  End") { toggle() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
+        f.addView(r, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(40)) })
+        return f
+    }
+
+    private fun showOverlay(v: Boolean) {
+        if (v) { overlay.alpha = 0f; overlay.visibility = View.VISIBLE; overlay.animate().alpha(1f).setDuration(220).start() }
+        else if (overlay.visibility == View.VISIBLE) overlay.animate().alpha(0f).setDuration(180).withEndAction { overlay.visibility = View.GONE }.start()
+    }
+
+    private fun micTap() { if (live) showOverlay(true) else toggle() }
 
     // ---------- voice loop ----------
     private fun toggle() {
-        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; Sfx.ping(); listen() }
+        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; Sfx.ping(); showOverlay(true); listen() }
     }
 
-    private fun idle() { orb.state = 0; status.text = "Tap to talk" }
+    private fun idle() { orb.state = 0; status.text = "Tap to Talk"; showOverlay(false) }
 
     private fun listen() {
         if (!live) return
@@ -301,6 +381,7 @@ class MainActivity : Activity() {
     private fun chars() = page("Home character", true) { l ->
         val c = card()
         c.addView(row("✨", "Sirf orb", if (Store.chr < 0) "✔ selected" else "Koi photo nahi") { Store.chr = -1; refreshHome(); go(3) })
+        for (k in bundled.indices) c.addView(row("🖼", bundled[k], if (Store.chr == 100 + k) "✔ selected" else "Tap to select") { Store.chr = 100 + k; refreshHome(); go(3) })
         for (n in 0 until Store.chars) {
             if (File(filesDir, "c$n.jpg").exists())
                 c.addView(row("🖼", "Character ${n + 1}", if (Store.chr == n) "✔ selected" else "Tap to select") { Store.chr = n; refreshHome(); go(3) })

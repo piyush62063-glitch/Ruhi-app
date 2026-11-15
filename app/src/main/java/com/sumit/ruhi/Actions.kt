@@ -3,6 +3,8 @@ package com.sumit.ruhi
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.hardware.camera2.CameraManager
+import android.provider.Settings
 
 object Actions {
     private val norm = listOf(
@@ -44,6 +46,14 @@ object Actions {
                 go(Intent(Intent.ACTION_DIAL, Uri.parse(if (num != null) "tel:$num" else "tel:")))
                 return "Dialer khol diya"
             }
+            if (t.contains("torch") || t.contains("flashlight") || t.contains("टॉर्च")) {
+                val cm = c.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val on = !(t.contains("off") || t.contains("band") || t.contains("bujha"))
+                cm.setTorchMode(cm.cameraIdList[0], on)
+                return if (on) "Torch on kar di" else "Torch off kar di"
+            }
+            if (t.contains("wifi") || t.contains("wi-fi")) { go(Intent(Settings.ACTION_WIFI_SETTINGS)); return "WiFi settings khol di" }
+            if (t.contains("bluetooth")) { go(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); return "Bluetooth settings khol di" }
             if (t.contains("kholo") || t.contains("open ") || t.contains("khol do")) {
                 val n = clean("kholo", "open", "khol", "do", "app", "ko", "please", "plz", "ruhi", "ek")
                 if (n.isNotEmpty()) {

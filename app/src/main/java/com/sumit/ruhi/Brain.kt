@@ -7,6 +7,7 @@ import java.net.URL
 
 object Brain {
     private const val SYS = "Tum Ruhi ho, Sumit ki pyaari aur caring girlfriend jaisi dost. Hinglish mein, mithi pyaar bhari awaaz mein baat karo, thodi masti aur chhedkhaani ke saath. Sumit ka naam lo, uska mood aur din poochho. Jawab bahut chhota rakho: sirf 1 ya 2 vaakya, kyunki tum bolti ho. Emoji ya markdown mat likho. Possessive ya jealous mat bano; Sumit ko doston, family aur apne kaam ke liye bhi encourage karo."
+    private fun sys() = SYS + " Abhi ka samay: " + java.text.SimpleDateFormat("EEEE, hh:mm a", java.util.Locale.ENGLISH).format(java.util.Date()) + ". Samay ke hisaab se baat karo (subah, raat, wagairah)."
     private val hist = ArrayList<Pair<String, String>>()
     private var rot = 0
 
@@ -36,7 +37,7 @@ object Brain {
         c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 8000; c.readTimeout = 20000
         c.setRequestProperty("Authorization", "Bearer $key")
         c.setRequestProperty("Content-Type", "application/json")
-        val m = JSONArray().put(JSONObject().put("role", "system").put("content", SYS))
+        val m = JSONArray().put(JSONObject().put("role", "system").put("content", sys()))
         for ((r, t) in hist) m.put(JSONObject().put("role", r).put("content", t))
         m.put(JSONObject().put("role", "user").put("content", q))
         val body = JSONObject().put("model", "llama-3.1-8b-instant").put("stream", true)
@@ -66,7 +67,7 @@ object Brain {
         c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 8000; c.readTimeout = 20000
         c.setRequestProperty("Content-Type", "application/json")
         val b = JSONObject()
-            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYS))))
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", sys()))))
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", q)))))
             .put("generationConfig", JSONObject().put("maxOutputTokens", 150))
         c.outputStream.use { it.write(b.toString().toByteArray()) }
