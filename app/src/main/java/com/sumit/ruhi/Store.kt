@@ -18,6 +18,9 @@ object Store {
     var chr: Int
         get() = sp.getInt("chr", -1)
         set(v) { sp.edit().putInt("chr", v).apply() }
+    var voice: Int
+        get() = sp.getInt("voice", 0)
+        set(v) { sp.edit().putInt("voice", v).apply() }
     var chars: Int
         get() = sp.getInt("chars", 0)
         set(v) { sp.edit().putInt("chars", v).apply() }

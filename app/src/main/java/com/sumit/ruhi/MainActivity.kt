@@ -43,7 +43,7 @@ class MainActivity : Activity() {
         orb = OrbView(this); status = tv("Tap to talk", 16f, DIM)
         charImg = ImageView(this); avatar = ImageView(this)
         homeView = buildHome()
-        val root = FrameLayout(this); root.setBackgroundColor(BG); root.clipChildren = false
+        val root = FrameLayout(this); root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#0A0A1F"), Color.parseColor("#1A1040"), Color.parseColor("#0A0A1F"))); root.clipChildren = false
         body = FrameLayout(this)
         root.addView(body, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(96) })
         root.addView(buildNav(), FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(10)) })
@@ -55,25 +55,28 @@ class MainActivity : Activity() {
 
     override fun onDestroy() { super.onDestroy(); speaker.shutdown(); rec?.destroy() }
 
+    private fun hap(v: View) { v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+    private var floatAnim: android.animation.ObjectAnimator? = null
+
     private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
 
     private fun tv(t: String, sz: Float = 16f, col: Int = Color.WHITE, bold: Boolean = false): TextView {
         val x = TextView(this); x.text = t; x.textSize = sz; x.setTextColor(col)
-        if (bold) x.setTypeface(null, Typeface.BOLD)
+        x.typeface = if (bold) Typeface.create("serif", Typeface.BOLD) else Typeface.create("sans-serif-light", Typeface.NORMAL)
         return x
     }
 
     private fun btn(t: String, f: () -> Unit): TextView {
         val x = tv(t, 16f); x.gravity = Gravity.CENTER; x.setPadding(0, dp(14), 0, dp(14))
         x.background = GradientDrawable().apply { setColor(PUR); cornerRadius = dp(30).toFloat() }
-        x.setOnClickListener { f() }
+        x.setOnClickListener { hap(x); x.animate().scaleX(0.94f).scaleY(0.94f).setDuration(70).withEndAction { x.animate().scaleX(1f).scaleY(1f).setDuration(110).start(); f() }.start() }
         x.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
         return x
     }
 
     private fun card(): LinearLayout {
         val c = LinearLayout(this); c.orientation = LinearLayout.VERTICAL; c.setPadding(dp(18), dp(14), dp(18), dp(16))
-        c.background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(24).toFloat(); setStroke(dp(1), Color.parseColor("#3A2F6B")) }
+        c.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor("#4A5B3FB0"), Color.parseColor("#B0140F3A"))).apply { cornerRadius = dp(24).toFloat(); setStroke(dp(1), Color.parseColor("#66B58CFF")) }
         c.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(16), dp(8), dp(16), dp(8)) }
         return c
     }
@@ -82,7 +85,7 @@ class MainActivity : Activity() {
         val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPadding(0, dp(10), 0, dp(10))
         r.addView(tv(ic, 22f).apply { setPadding(0, 0, dp(14), 0) })
         val m = LinearLayout(this); m.orientation = LinearLayout.VERTICAL; m.addView(tv(t, 17f)); m.addView(tv(s, 13f, DIM))
-        r.addView(m, LinearLayout.LayoutParams(0, -2, 1f)); r.addView(tv("›", 24f, DIM)); r.setOnClickListener { f() }
+        r.addView(m, LinearLayout.LayoutParams(0, -2, 1f)); r.addView(tv("›", 24f, DIM)); r.setOnClickListener { hap(r); f() }
         return r
     }
 
@@ -104,6 +107,7 @@ class MainActivity : Activity() {
             2 -> history()
             else -> when (sub) { 1 -> conn(); 2 -> look(); 3 -> chars(); 4 -> phone(); else -> settingsMain() }
         })
+        val nv = body.getChildAt(0); nv.alpha = 0f; nv.translationY = dp(14).toFloat(); nv.animate().alpha(1f).translationY(0f).setDuration(220).start()
         for (i in tabs.indices) tabs[i].setTextColor(if (i == t) Color.parseColor("#FFB020") else DIM)
         curTab = t
     }
@@ -121,7 +125,7 @@ class MainActivity : Activity() {
                 avatar.translationY = -dp(14).toFloat(); avatar.setOnClickListener { toggle() }
                 n.addView(avatar, LinearLayout.LayoutParams(dp(68), dp(68)).apply { setMargins(dp(6), 0, dp(6), 0) })
             }
-            val x = tv(labels[i], 12f, DIM); x.gravity = Gravity.CENTER; x.setOnClickListener { sub = 0; show(i) }
+            val x = tv(labels[i], 12f, DIM); x.gravity = Gravity.CENTER; x.setOnClickListener { hap(x); sub = 0; show(i) }
             tabs.add(x); n.addView(x, LinearLayout.LayoutParams(0, -1, 1f))
         }
         return n
@@ -148,6 +152,7 @@ class MainActivity : Activity() {
         if (Store.chr >= 0 && f.exists()) {
             val bmp = BitmapFactory.decodeFile(f.path)
             charImg.setImageBitmap(bmp); avatar.setImageBitmap(bmp); charImg.visibility = View.VISIBLE
+            floatAnim?.cancel(); floatAnim = android.animation.ObjectAnimator.ofFloat(charImg, "translationY", 0f, -dp(8).toFloat()).apply { duration = 2200; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE; start() }
             orb.layoutParams = LinearLayout.LayoutParams(dp(150), dp(150))
         } else {
             charImg.setImageDrawable(null); avatar.setImageDrawable(null); charImg.visibility = View.GONE
@@ -157,7 +162,7 @@ class MainActivity : Activity() {
 
     // ---------- voice loop ----------
     private fun toggle() {
-        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; listen() }
+        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; Sfx.ping(); listen() }
     }
 
     private fun idle() { orb.state = 0; status.text = "Tap to talk" }
@@ -244,6 +249,7 @@ class MainActivity : Activity() {
         c.addView(row("🔑", "Connections", "Gemini and Groq keys") { go(1) })
         c.addView(row("🎨", "Look & feel", "Orb style: ${OrbView.names[Store.orb % OrbView.names.size]}") { go(2) })
         c.addView(row("🧑", "Home character", "Photo on Home screen") { go(3) })
+        c.addView(row("🎙", "Voice", if (Store.voice == 0) "Kore: natural, LIA style (tap to switch)" else "Phone voice: fastest (tap to switch)") { Store.voice = 1 - Store.voice; go(0) })
         l.addView(c)
         l.addView(tv("APP SETTINGS", 13f, DIM).apply { setPadding(dp(20), dp(12), 0, 0) })
         val c2 = card()
@@ -322,10 +328,10 @@ class MainActivity : Activity() {
         val u = d?.data
         if (rc == 7 && res == RESULT_OK && u != null) {
             try {
-                val o = BitmapFactory.Options(); o.inSampleSize = 4
+                val o = BitmapFactory.Options(); o.inSampleSize = 2
                 val bmp = contentResolver.openInputStream(u)!!.use { BitmapFactory.decodeStream(it, null, o) }!!
                 val n = Store.chars
-                java.io.FileOutputStream(File(filesDir, "c$n.jpg")).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                java.io.FileOutputStream(File(filesDir, "c$n.jpg")).use { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
                 Store.chars = n + 1; Store.chr = n; refreshHome(); go(3)
             } catch (e: Exception) { Toast.makeText(this, "Photo nahi khuli", Toast.LENGTH_SHORT).show() }
         }
