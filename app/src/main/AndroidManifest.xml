@@ -9,6 +9,8 @@
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Ruhi"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <activity
