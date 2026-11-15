@@ -3,504 +3,331 @@ package com.sumit.ruhi
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Color
-import android.graphics.Outline
-import android.graphics.Typeface
+import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
+import android.os.*
 import android.provider.Settings
+import android.speech.*
 import android.text.InputType
-import android.view.Gravity
-import android.view.View
-import android.view.ViewOutlineProvider
-import android.widget.Button
-import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.Space
-import android.widget.TextView
-import android.widget.Toast
+import android.view.*
+import android.widget.*
 import java.io.File
 
 class MainActivity : Activity() {
-    private val BG = 0xFF0B0820.toInt()
-    private val CARD = 0xFF161233.toInt()
-    private val ACC = 0xFF9B6BFF.toInt()
-    private val TXT = 0xFFEDE9FE.toInt()
-    private val SUB = 0xFF9A93C0.toInt()
-    private val GOLD = 0xFFE8B96A.toInt()
-
-    private lateinit var pages: List<View>
-    private lateinit var navItems: List<TextView>
+    private val BG = Color.parseColor("#0B0B1A")
+    private val CARD = Color.parseColor("#151530")
+    private val PUR = Color.parseColor("#9B5CFF")
+    private val DIM = Color.parseColor("#8E8AB8")
+    private val ui = Handler(Looper.getMainLooper())
+    private val log = ArrayList<String>()
+    private val tabs = ArrayList<TextView>()
+    private lateinit var body: FrameLayout
     private lateinit var orb: OrbView
-    private lateinit var titleTv: TextView
-    private lateinit var sub: TextView
-    private lateinit var reply: TextView
-    private lateinit var btnMute: Button
-    private lateinit var btnEnd: Button
-    private lateinit var chatList: LinearLayout
-    private lateinit var chatScroll: ScrollView
-    private lateinit var chatInput: EditText
-    private lateinit var avatarBox: FrameLayout
-    private var avatarImg: ImageView? = null
-    private var tab = 0
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    private fun rounded(fill: Int, r: Int, stroke: Int = 0): GradientDrawable = GradientDrawable().apply {
-        setColor(fill)
-        cornerRadius = dp(r).toFloat()
-        if (stroke != 0) setStroke(dp(1), stroke)
-    }
-
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+    private lateinit var status: TextView
+    private lateinit var charImg: ImageView
+    private lateinit var avatar: ImageView
+    private lateinit var homeView: View
+    private lateinit var speaker: Speaker
+    private var rec: SpeechRecognizer? = null
+    private var live = false
+    private var thinking = false
+    private var fails = 0
+    private var sub = 0
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Store.init(this)
-        window.statusBarColor = BG
-        window.navigationBarColor = BG
-        val root = FrameLayout(this)
-        root.setBackgroundColor(BG)
-        pages = listOf(buildHome(), buildChat(), buildStyle(), buildSettings())
-        val content = FrameLayout(this)
-        for (p in pages) content.addView(p, FrameLayout.LayoutParams(-1, -1))
-        root.addView(content, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(84) })
-        root.addView(buildNav(), FrameLayout.LayoutParams(-1, dp(104), Gravity.BOTTOM))
+        window.statusBarColor = BG; window.navigationBarColor = BG
+        speaker = Speaker(this) { if (live && !thinking) listen() else if (!live) idle() }
+        orb = OrbView(this); status = tv("Tap to talk", 16f, DIM)
+        charImg = ImageView(this); avatar = ImageView(this)
+        homeView = buildHome()
+        val root = FrameLayout(this); root.setBackgroundColor(BG); root.clipChildren = false
+        body = FrameLayout(this)
+        root.addView(body, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(96) })
+        root.addView(buildNav(), FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(10)) })
+        root.setOnApplyWindowInsetsListener { v, i -> v.setPadding(0, i.systemWindowInsetTop, 0, i.systemWindowInsetBottom); i }
         setContentView(root)
-        showTab(0)
+        refreshHome(); show(0)
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
-    override fun onResume() {
-        super.onResume()
-        Hub.onChange = { refresh() }
-        orb.style = Store.orbStyle
-        loadAvatar()
-        refresh()
+    override fun onDestroy() { super.onDestroy(); speaker.shutdown(); rec?.destroy() }
+
+    private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
+
+    private fun tv(t: String, sz: Float = 16f, col: Int = Color.WHITE, bold: Boolean = false): TextView {
+        val x = TextView(this); x.text = t; x.textSize = sz; x.setTextColor(col)
+        if (bold) x.setTypeface(null, Typeface.BOLD)
+        return x
     }
 
-    override fun onPause() {
-        Hub.onChange = null
-        super.onPause()
+    private fun btn(t: String, f: () -> Unit): TextView {
+        val x = tv(t, 16f); x.gravity = Gravity.CENTER; x.setPadding(0, dp(14), 0, dp(14))
+        x.background = GradientDrawable().apply { setColor(PUR); cornerRadius = dp(30).toFloat() }
+        x.setOnClickListener { f() }
+        x.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+        return x
     }
 
-    // ---------- Home ----------
-    private fun buildHome(): View {
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(24), dp(16), dp(24), dp(8))
-        c.addView(TextView(this).apply {
-            text = "ruhi"; setTextColor(TXT); textSize = 34f; typeface = Typeface.SERIF
+    private fun card(): LinearLayout {
+        val c = LinearLayout(this); c.orientation = LinearLayout.VERTICAL; c.setPadding(dp(18), dp(14), dp(18), dp(16))
+        c.background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(24).toFloat(); setStroke(dp(1), Color.parseColor("#3A2F6B")) }
+        c.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(16), dp(8), dp(16), dp(8)) }
+        return c
+    }
+
+    private fun row(ic: String, t: String, s: String, f: () -> Unit): View {
+        val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPadding(0, dp(10), 0, dp(10))
+        r.addView(tv(ic, 22f).apply { setPadding(0, 0, dp(14), 0) })
+        val m = LinearLayout(this); m.orientation = LinearLayout.VERTICAL; m.addView(tv(t, 17f)); m.addView(tv(s, 13f, DIM))
+        r.addView(m, LinearLayout.LayoutParams(0, -2, 1f)); r.addView(tv("›", 24f, DIM)); r.setOnClickListener { f() }
+        return r
+    }
+
+    private fun page(title: String, back: Boolean, fill: (LinearLayout) -> Unit): View {
+        val sv = ScrollView(this); val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.setPadding(0, dp(16), 0, dp(24))
+        val h = LinearLayout(this); h.gravity = Gravity.CENTER_VERTICAL; h.setPadding(dp(16), 0, dp(16), dp(8))
+        if (back) h.addView(tv("←", 26f).apply { setPadding(0, 0, dp(16), 0); setOnClickListener { go(0) } })
+        h.addView(tv(title, 26f, Color.WHITE, true)); l.addView(h)
+        fill(l); sv.addView(l); return sv
+    }
+
+    private fun go(n: Int) { sub = n; show(3) }
+
+    private fun show(t: Int) {
+        body.removeAllViews()
+        body.addView(when (t) {
+            0 -> homeView
+            1 -> chat()
+            2 -> history()
+            else -> when (sub) { 1 -> conn(); 2 -> look(); 3 -> chars(); 4 -> phone(); else -> settingsMain() }
         })
-        orb = OrbView(this).apply {
-            live = true
-            style = Store.orbStyle
-            setOnClickListener { onOrb() }
-        }
-        c.addView(orb, LinearLayout.LayoutParams(-1, 0, 1f))
-        titleTv = TextView(this).apply {
-            textSize = 26f; setTextColor(TXT); gravity = Gravity.CENTER
-            typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-        }
-        sub = TextView(this).apply { textSize = 14f; setTextColor(SUB); gravity = Gravity.CENTER; minLines = 2 }
-        reply = TextView(this).apply { textSize = 16f; setTextColor(TXT); gravity = Gravity.CENTER; maxLines = 4 }
-        c.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
-        c.addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-        c.addView(reply, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        btnMute = btn("Mute", 0xFF2A2350.toInt()) { if (Hub.running) RuhiService.cmd(this, RuhiService.A_MUTE) else toast("Pehle Start dabao") }
-        btnEnd = btn("Start", ACC) { if (Hub.running) RuhiService.cmd(this, RuhiService.A_STOP) else startTalk() }
-        val btnMin = btn("Minimize", 0xFF2A2350.toInt()) { moveTaskToBack(true) }
-        for (x in listOf(btnMute, btnEnd, btnMin)) {
-            row.addView(x, LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
-        }
-        c.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
-        return c
+        for (i in tabs.indices) tabs[i].setTextColor(if (i == t) Color.parseColor("#FFB020") else DIM)
+        curTab = t
     }
+    private var curTab = 0
 
-    private fun onOrb() {
-        if (!Hub.running) startTalk() else RuhiService.cmd(this, RuhiService.A_SKIP)
-    }
-
-    private fun refresh() {
-        orb.style = Store.orbStyle
-        titleTv.text = when {
-            !Hub.running -> "Tap the orb to talk"
-            Hub.muted -> "Muted"
-            else -> when (Hub.state) {
-                Hub.LISTENING -> "Listening…"
-                Hub.THINKING -> "Thinking…"
-                Hub.SPEAKING -> "Ruhi bol rahi hai"
-                else -> "Tap the orb to talk"
-            }
-        }
-        sub.text = if (Hub.status.isNotEmpty()) Hub.status else Hub.partial
-        val last = synchronized(Hub.msgs) { Hub.msgs.lastOrNull { !it.first }?.second ?: "" }
-        reply.text = last
-        btnMute.text = if (Hub.muted) "Unmute" else "Mute"
-        btnEnd.text = if (Hub.running) "End" else "Start"
-        if (tab == 1) rebuildChat()
-    }
-
-    private fun startTalk() {
-        val all = ArrayList<String>()
-        all.add(Manifest.permission.RECORD_AUDIO)
-        all.add(Manifest.permission.READ_CONTACTS)
-        all.add(Manifest.permission.CALL_PHONE)
-        if (Build.VERSION.SDK_INT >= 33) all.add(Manifest.permission.POST_NOTIFICATIONS)
-        val need = all.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        val noMic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
-        if (noMic || (need.isNotEmpty() && !Store.permAsked)) {
-            Store.permAsked = true
-            requestPermissions(need.toTypedArray(), 7)
-            return
-        }
-        RuhiService.cmd(this, RuhiService.A_START)
-    }
-
-    override fun onRequestPermissionsResult(rc: Int, perms: Array<out String>, res: IntArray) {
-        super.onRequestPermissionsResult(rc, perms, res)
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            RuhiService.cmd(this, RuhiService.A_START)
-        } else {
-            toast("Mic permission ke bina Ruhi sun nahi sakti")
-        }
-    }
-
-    // ---------- Chat ----------
-    private fun buildChat(): View {
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(16), dp(16), dp(16), dp(8))
-        c.addView(TextView(this).apply { text = "Chat"; setTextColor(TXT); textSize = 26f; typeface = Typeface.SERIF })
-        chatList = LinearLayout(this)
-        chatList.orientation = LinearLayout.VERTICAL
-        chatScroll = ScrollView(this)
-        chatScroll.addView(chatList)
-        c.addView(chatScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8) })
-        val row = LinearLayout(this)
-        row.gravity = Gravity.CENTER_VERTICAL
-        chatInput = edit("Ruhi se kuch bhi pucho…", false)
-        chatInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-        row.addView(chatInput, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(btn("Send", ACC) { sendTyped() }, LinearLayout.LayoutParams(dp(84), dp(48)).apply { leftMargin = dp(8) })
-        c.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        return c
-    }
-
-    private fun sendTyped() {
-        val t = chatInput.text.toString().trim()
-        if (t.isEmpty()) return
-        chatInput.setText("")
-        val ctx = applicationContext
-        Thread { Core.process(ctx, t, null, 0) }.start()
-    }
-
-    private fun rebuildChat() {
-        chatList.removeAllViews()
-        val copy = synchronized(Hub.msgs) { ArrayList(Hub.msgs) }
-        for (m in copy) {
-            val tv = TextView(this).apply {
-                text = m.second
-                textSize = 15f
-                setTextColor(TXT)
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                background = rounded(if (m.first) 0xFF5B3FC4.toInt() else CARD, 16)
-                maxWidth = dp(280)
-            }
-            chatList.addView(tv, LinearLayout.LayoutParams(-2, -2).apply {
-                gravity = if (m.first) Gravity.END else Gravity.START
-                topMargin = dp(6)
-            })
-        }
-        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    // ---------- Style (orb + photo) ----------
-    private fun buildStyle(): View {
-        val sv = ScrollView(this)
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(16), dp(16), dp(16), dp(24))
-        sv.addView(col)
-        col.addView(TextView(this).apply { text = "Style"; setTextColor(TXT); textSize = 26f; typeface = Typeface.SERIF })
-
-        val names = listOf("Plasma", "Aurora", "Pulse", "Galaxy")
-        val boxes = ArrayList<LinearLayout>()
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        fun hl() {
-            for (i in boxes.indices) {
-                boxes[i].background = GradientDrawable().apply {
-                    setColor(0xFF0F0B26.toInt())
-                    cornerRadius = dp(14).toFloat()
-                    setStroke(dp(2), if (i == Store.orbStyle) ACC else 0x00000000)
-                }
-            }
-        }
-        for (i in names.indices) {
-            val ov = OrbView(this)
-            ov.style = i
-            val box = LinearLayout(this)
-            box.orientation = LinearLayout.VERTICAL
-            box.gravity = Gravity.CENTER_HORIZONTAL
-            box.setPadding(dp(4), dp(4), dp(4), dp(6))
-            box.setOnClickListener {
-                Store.orbStyle = i
-                orb.style = i
-                hl()
-            }
-            box.addView(ov, LinearLayout.LayoutParams(-1, dp(84)))
-            box.addView(TextView(this).apply { text = names[i]; textSize = 12f; setTextColor(TXT); gravity = Gravity.CENTER })
-            boxes.add(box)
-            row.addView(box, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
-        }
-        hl()
-        col.addView(card(label("Orb style chuno (tap karke select karo)"), row), cardLp())
-
-        val photoBtn = btn("Ruhi ki photo chuno", ACC) {
-            val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
-            i.addCategory(Intent.CATEGORY_OPENABLE)
-            i.type = "image/*"
-            startActivityForResult(i, 21)
-        }
-        col.addView(card(label("Neeche bar ke beech wali gol photo"), photoBtn), cardLp())
-        return sv
-    }
-
-    override fun onActivityResult(rc: Int, res: Int, data: Intent?) {
-        super.onActivityResult(rc, res, data)
-        val uri: Uri? = data?.data
-        if (rc == 21 && res == RESULT_OK && uri != null) {
-            try {
-                val bmp = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return
-                val s = minOf(bmp.width, bmp.height)
-                val sq = Bitmap.createBitmap(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s)
-                val out = Bitmap.createScaledBitmap(sq, 300, 300, true)
-                File(filesDir, "avatar.png").outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                loadAvatar()
-                toast("Photo set ho gayi")
-            } catch (e: Exception) {
-                toast("Photo nahi lag paayi")
-            }
-        }
-    }
-
-    private fun loadAvatar() {
-        val f = File(filesDir, "avatar.png")
-        val iv = avatarImg ?: return
-        if (f.exists()) {
-            iv.setImageBitmap(BitmapFactory.decodeFile(f.absolutePath))
-            iv.visibility = View.VISIBLE
-        } else {
-            iv.visibility = View.GONE
-        }
-    }
-
-    // ---------- Settings ----------
-    private fun buildSettings(): View {
-        val sv = ScrollView(this)
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(16), dp(16), dp(16), dp(24))
-        sv.addView(col)
-        col.addView(TextView(this).apply { text = "Settings"; setTextColor(TXT); textSize = 26f; typeface = Typeface.SERIF })
-        col.addView(label("Keys sirf is phone me save hoti hain."), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-
-        col.addView(keyCard(
-            "Chat - Groq keys",
-            "Fast replies. Kai keys comma (,) se alag karke daal sakte ho, rate limit pe baari-baari use hongi.",
-            "Paste Groq key(s)", { Store.groqKeys.isNotBlank() }, "https://console.groq.com/keys"
-        ) { Store.groqKeys = it }, cardLp())
-
-        col.addView(keyCard(
-            "Gemini key",
-            "Backup brain aur Gemini voice (Kore) ke liye.",
-            "Paste Gemini key", { Store.geminiKey.isNotBlank() }, "https://aistudio.google.com/apikey"
-        ) { Store.geminiKey = it }, cardLp())
-
-        col.addView(keyCard(
-            "ElevenLabs key (optional)",
-            "ElevenLabs wali premium awaaz ke liye.",
-            "Paste ElevenLabs key", { Store.elevenKey.isNotBlank() }, "https://elevenlabs.io/app/settings/api-keys"
-        ) { Store.elevenKey = it }, cardLp())
-
-        // voice + language
-        val engines = listOf("Phone voice (sabse fast)", "Gemini voice (Kore)", "ElevenLabs voice")
-        val eng = radio(engines, Store.voiceEngine) { Store.voiceEngine = it }
-        val gv = edit("Gemini voice naam (Kore, Aoede, Puck…)", false)
-        gv.setText(Store.geminiVoice)
-        val ev = edit("ElevenLabs voice ID", false)
-        ev.setText(Store.elevenVoiceId)
-        val langs = listOf("Hindi (hi-IN)", "Hinglish (en-IN)")
-        val lang = radio(langs, if (Store.lang == "en-IN") 1 else 0) { Store.lang = if (it == 1) "en-IN" else "hi-IN" }
-        val nm = edit("Tumhara naam", false)
-        nm.setText(Store.userName)
-        col.addView(card(
-            label("Voice aur language"), eng, gv, ev, label("Tum kis language me bologe?"), lang, label("Ruhi tumhe kya bulaye?"), nm,
-            btn("Save", ACC) {
-                Store.geminiVoice = gv.text.toString().trim().ifEmpty { "Kore" }
-                Store.elevenVoiceId = ev.text.toString().trim().ifEmpty { "EXAVITQu4vr4xnSDxMzb" }
-                Store.userName = nm.text.toString().trim().ifEmpty { "Sumit" }
-                toast("Saved")
-            }
-        ), cardLp())
-
-        // permissions
-        val ovl = label(overlayText())
-        col.addView(card(
-            label("Background me apps kholne ke liye"),
-            label("'Display over other apps' ON karo, tabhi app ke bahar rehkar bhi YouTube/WhatsApp wagairah khulenge."),
-            ovl,
-            btn("Overlay permission kholo", ACC) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            }
-        ), cardLp())
-        col.addView(label("Ruhi v6"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-        return sv
-    }
-
-    private fun overlayText(): String =
-        if (Settings.canDrawOverlays(this)) "Status: ON" else "Status: OFF"
-
-    // ---------- helpers ----------
-    private fun label(t: String): TextView = TextView(this).apply { text = t; textSize = 14f; setTextColor(SUB) }
-
-    private fun edit(hint: String, pwd: Boolean): EditText = EditText(this).apply {
-        this.hint = hint
-        setHintTextColor(0xFF6E678F.toInt())
-        setTextColor(TXT)
-        textSize = 15f
-        setSingleLine(true)
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = rounded(0xFF0F0B26.toInt(), 14, 0xFF2A2350.toInt())
-        if (pwd) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-    }
-
-    private fun btn(t: String, fill: Int, onClick: () -> Unit): Button = Button(this).apply {
-        text = t
-        isAllCaps = false
-        setTextColor(Color.WHITE)
-        textSize = 15f
-        background = rounded(fill, 26)
-        setOnClickListener { onClick() }
-    }
-
-    private fun cardLp() = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) }
-
-    private fun card(vararg v: View): LinearLayout {
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(16), dp(14), dp(16), dp(16))
-        c.background = rounded(CARD, 20, 0xFF2D2760.toInt())
-        for (x in v) c.addView(x, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        return c
-    }
-
-    private fun radio(options: List<String>, current: Int, onSel: (Int) -> Unit): RadioGroup {
-        val g = RadioGroup(this)
-        for (i in options.indices) {
-            g.addView(RadioButton(this).apply {
-                text = options[i]
-                setTextColor(TXT)
-                id = 100 + i
-                isChecked = i == current
-            })
-        }
-        g.setOnCheckedChangeListener { _, id -> onSel(id - 100) }
-        return g
-    }
-
-    private fun keyCard(t: String, d: String, hint: String, has: () -> Boolean, url: String, save: (String) -> Unit): View {
-        val st = TextView(this)
-        st.textSize = 13f
-        fun upd() {
-            st.text = if (has()) "✓ Ready" else "⚠ Add a key"
-            st.setTextColor(if (has()) 0xFF2DD4BF.toInt() else 0xFFFFB020.toInt())
-        }
-        upd()
-        val e = edit(hint, true)
-        val head = LinearLayout(this)
-        head.gravity = Gravity.CENTER_VERTICAL
-        head.addView(TextView(this).apply { text = t; textSize = 17f; setTextColor(TXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(st)
-        val link = TextView(this).apply {
-            text = "Get a free key ↗"
-            textSize = 14f
-            setTextColor(ACC)
-            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-        }
-        return card(head, label(d), e, btn("Save key", ACC) {
-            val v = e.text.toString().trim()
-            if (v.isNotEmpty()) {
-                save(v)
-                e.setText("")
-                upd()
-                toast("Saved")
-            } else {
-                toast("Pehle key paste karo")
-            }
-        }, link)
-    }
-
-    // ---------- bottom nav ----------
     private fun buildNav(): View {
-        val fl = FrameLayout(this)
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        bar.gravity = Gravity.CENTER_VERTICAL
-        bar.background = rounded(CARD, 32, 0xFF2D2760.toInt())
-        fun item(t: String, i: Int): TextView = TextView(this).apply {
-            text = t
-            gravity = Gravity.CENTER
-            textSize = 14f
-            setOnClickListener { showTab(i) }
+        val n = LinearLayout(this); n.gravity = Gravity.CENTER_VERTICAL; n.clipChildren = false; n.setPadding(dp(8), 0, dp(8), 0)
+        n.background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(34).toFloat(); setStroke(dp(1), Color.parseColor("#3A2F6B")) }
+        val labels = listOf("🏠\nHome", "💬\nChat", "🕘\nHistory", "⚙\nSettings")
+        for (i in 0..3) {
+            if (i == 2) {
+                avatar.scaleType = ImageView.ScaleType.CENTER_CROP
+                avatar.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(PUR); setStroke(dp(3), Color.parseColor("#C9A15B")) }
+                avatar.outlineProvider = ViewOutlineProvider.BACKGROUND; avatar.clipToOutline = true
+                avatar.translationY = -dp(14).toFloat(); avatar.setOnClickListener { toggle() }
+                n.addView(avatar, LinearLayout.LayoutParams(dp(68), dp(68)).apply { setMargins(dp(6), 0, dp(6), 0) })
+            }
+            val x = tv(labels[i], 12f, DIM); x.gravity = Gravity.CENTER; x.setOnClickListener { sub = 0; show(i) }
+            tabs.add(x); n.addView(x, LinearLayout.LayoutParams(0, -1, 1f))
         }
-        navItems = listOf(item("Home", 0), item("Chat", 1), item("Style", 2), item("Settings", 3))
-        bar.addView(navItems[0], LinearLayout.LayoutParams(0, -1, 1f))
-        bar.addView(navItems[1], LinearLayout.LayoutParams(0, -1, 1f))
-        bar.addView(Space(this), LinearLayout.LayoutParams(dp(84), 1))
-        bar.addView(navItems[2], LinearLayout.LayoutParams(0, -1, 1f))
-        bar.addView(navItems[3], LinearLayout.LayoutParams(0, -1, 1f))
-        fl.addView(bar, FrameLayout.LayoutParams(-1, dp(64), Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(14)) })
-
-        avatarBox = FrameLayout(this)
-        avatarBox.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(0xFF2A1670.toInt())
-            setStroke(dp(3), GOLD)
-        }
-        avatarBox.addView(TextView(this).apply {
-            text = "R"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 28f
-            typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-        }, FrameLayout.LayoutParams(-1, -1))
-        val iv = ImageView(this)
-        iv.scaleType = ImageView.ScaleType.CENTER_CROP
-        iv.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(v: View, o: Outline) { o.setOval(0, 0, v.width, v.height) }
-        }
-        iv.clipToOutline = true
-        avatarImg = iv
-        avatarBox.addView(iv, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
-        avatarBox.setOnClickListener { if (Hub.running) RuhiService.cmd(this, RuhiService.A_STOP) else startTalk() }
-        fl.addView(avatarBox, FrameLayout.LayoutParams(dp(72), dp(72), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(26) })
-        return fl
+        return n
     }
 
-    private fun showTab(i: Int) {
-        tab = i
-        for (j in pages.indices) pages[j].visibility = if (j == i) View.VISIBLE else View.GONE
-        for (j in navItems.indices) navItems[j].setTextColor(if (j == i) GOLD else SUB)
-        refresh()
+    private fun buildHome(): View {
+        val sv = ScrollView(this)
+        val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.gravity = Gravity.CENTER_HORIZONTAL
+        l.setPadding(dp(16), dp(24), dp(16), dp(16))
+        l.addView(tv("Namaste, Sumit 💜", 24f, Color.WHITE, true))
+        l.addView(tv("Main Ruhi, sirf tumhari", 14f, DIM))
+        charImg.scaleType = ImageView.ScaleType.FIT_CENTER
+        l.addView(charImg, LinearLayout.LayoutParams(-1, dp(220)))
+        l.addView(orb, LinearLayout.LayoutParams(dp(260), dp(260)))
+        status.gravity = Gravity.CENTER
+        l.addView(status)
+        l.addView(btn("🎤  Tap to Talk") { toggle() })
+        sv.addView(l); return sv
+    }
+
+    private fun refreshHome() {
+        orb.style = Store.orb
+        val f = File(filesDir, "c${Store.chr}.jpg")
+        if (Store.chr >= 0 && f.exists()) {
+            val bmp = BitmapFactory.decodeFile(f.path)
+            charImg.setImageBitmap(bmp); avatar.setImageBitmap(bmp); charImg.visibility = View.VISIBLE
+            orb.layoutParams = LinearLayout.LayoutParams(dp(150), dp(150))
+        } else {
+            charImg.setImageDrawable(null); avatar.setImageDrawable(null); charImg.visibility = View.GONE
+            orb.layoutParams = LinearLayout.LayoutParams(dp(280), dp(280))
+        }
+    }
+
+    // ---------- voice loop ----------
+    private fun toggle() {
+        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; listen() }
+    }
+
+    private fun idle() { orb.state = 0; status.text = "Tap to talk" }
+
+    private fun listen() {
+        if (!live) return
+        orb.state = 1; status.text = "Sun rahi hoon..."
+        if (rec == null) {
+            rec = SpeechRecognizer.createSpeechRecognizer(this)
+            rec!!.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(p: Bundle?) {}
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(v: Float) {}
+                override fun onBufferReceived(b: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onPartialResults(b: Bundle?) {}
+                override fun onEvent(t: Int, b: Bundle?) {}
+                override fun onError(e: Int) {
+                    if (!live || thinking) return
+                    fails++
+                    if (fails > 12) { live = false; idle(); status.text = "Mic error $e, phir se tap karo"; return }
+                    ui.postDelayed({ listen() }, 700)
+                }
+                override fun onResults(b: Bundle?) {
+                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                    if (t.isBlank()) { onError(7); return }
+                    fails = 0; ask(t)
+                }
+            })
+        }
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+        rec!!.startListening(i)
+    }
+
+    private fun ask(q: String) {
+        thinking = true; orb.state = 0; status.text = "Soch rahi hoon..."
+        log.add("Tum: $q"); Store.addHist(q)
+        val act = Actions.run(this, q)
+        if (act != null) { log.add("Ruhi: $act"); thinking = false; orb.state = 2; speaker.say(act); return }
+        log.add("Ruhi: ")
+        val idx = log.size - 1
+        Brain.ask(q,
+            { s -> ui.post { orb.state = 2; status.text = "Bol rahi hoon..."; log[idx] = log[idx] + s + " "; speaker.say(s); if (curTab == 1) show(1) } },
+            { ui.post { thinking = false; if (!speaker.busy()) { if (live) listen() else idle() } } },
+            { m -> ui.post { thinking = false; log[idx] = "Ruhi: ($m)"; status.text = m; speaker.say("Sumit, net ya key mein kuch gadbad hai") } })
+    }
+
+    // ---------- tabs ----------
+    private fun chat(): View {
+        val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL
+        val sv = ScrollView(this)
+        val t = tv(if (log.isEmpty()) "Kuch bhi poocho ya bolo 💬" else log.joinToString("\n\n"), 16f)
+        t.setPadding(dp(18), dp(18), dp(18), dp(18)); sv.addView(t)
+        l.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
+        val r = LinearLayout(this); r.gravity = Gravity.CENTER_VERTICAL; r.setPadding(dp(12), dp(8), dp(12), dp(8))
+        val e = EditText(this); e.hint = "Ask me anything..."; e.setHintTextColor(DIM); e.setTextColor(Color.WHITE); e.setSingleLine()
+        e.background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(26).toFloat() }
+        e.setPadding(dp(18), dp(12), dp(18), dp(12))
+        r.addView(e, LinearLayout.LayoutParams(0, -2, 1f))
+        r.addView(tv("➤", 26f, PUR).apply {
+            setPadding(dp(14), 0, dp(6), 0)
+            setOnClickListener { val q = e.text.toString().trim(); if (q.isNotEmpty()) { e.setText(""); ask(q); show(1) } }
+        })
+        l.addView(r)
+        sv.post { sv.fullScroll(View.FOCUS_DOWN) }
+        return l
+    }
+
+    private fun history(): View {
+        val sv = ScrollView(this); val l = LinearLayout(this); l.orientation = LinearLayout.VERTICAL; l.setPadding(dp(8), dp(16), dp(8), dp(16))
+        l.addView(tv("History", 26f, Color.WHITE, true).apply { setPadding(dp(14), 0, 0, dp(8)) })
+        val h = Store.hist()
+        if (h.isEmpty()) l.addView(tv("Abhi kuch nahi", 15f, DIM).apply { setPadding(dp(14), 0, 0, 0) })
+        for (s in h) { val c = card(); c.addView(tv(s, 15f)); l.addView(c) }
+        sv.addView(l); return sv
+    }
+
+    // ---------- settings ----------
+    private fun settingsMain() = page("Settings", false) { l ->
+        l.addView(tv("AI SETTINGS", 13f, DIM).apply { setPadding(dp(20), 0, 0, 0) })
+        val c = card()
+        c.addView(row("🔑", "Connections", "Gemini and Groq keys") { go(1) })
+        c.addView(row("🎨", "Look & feel", "Orb style: ${OrbView.names[Store.orb % OrbView.names.size]}") { go(2) })
+        c.addView(row("🧑", "Home character", "Photo on Home screen") { go(3) })
+        l.addView(c)
+        l.addView(tv("APP SETTINGS", 13f, DIM).apply { setPadding(dp(20), dp(12), 0, 0) })
+        val c2 = card()
+        c2.addView(row("📱", "Phone control", "Permissions and background mode") { go(4) })
+        l.addView(c2)
+    }
+
+    private fun keyCard(l: LinearLayout, t: String, s: String, ready: Boolean, b: String, save: (String) -> Unit) {
+        val c = card(); c.addView(tv(t, 18f))
+        c.addView(tv(if (ready) "✅ Ready" else "⚠ Not set", 13f, if (ready) Color.parseColor("#4FE3C1") else Color.parseColor("#FFB020")))
+        c.addView(tv(s, 13f, DIM))
+        val e = EditText(this); e.hint = if (ready) "•••• saved (nayi paste karo)" else "Key paste karo"
+        e.setHintTextColor(DIM); e.setTextColor(Color.WHITE); e.setSingleLine()
+        e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        e.background = GradientDrawable().apply { setColor(Color.parseColor("#1B1B3D")); cornerRadius = dp(24).toFloat() }
+        e.setPadding(dp(18), dp(14), dp(18), dp(14))
+        c.addView(e, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        c.addView(btn(b) {
+            val v = e.text.toString().trim()
+            if (v.isNotEmpty()) { save(v); Toast.makeText(this, "Saved ✅", Toast.LENGTH_SHORT).show(); go(1) }
+        })
+        l.addView(c)
+    }
+
+    private fun conn() = page("Connections", true) { l ->
+        l.addView(tv("Keys sirf isi phone mein save hoti hain.", 14f, DIM).apply { setPadding(dp(20), 0, dp(20), dp(4)) })
+        keyCard(l, "Gemini key", "Backup brain: Groq na chale to ye kaam karegi", Store.gemini.isNotBlank(), "Save Gemini key") { Store.gemini = it }
+        keyCard(l, "Chat - Groq keys", "Fast replies. Kai keys comma se alag karo", Store.groq.isNotBlank(), "Save Groq keys") { Store.groq = it }
+    }
+
+    private fun look() = page("Look & feel", true) { l ->
+        l.addView(tv("Orb style chuno", 14f, DIM).apply { setPadding(dp(20), 0, 0, dp(6)) })
+        var i = 0
+        while (i < OrbView.names.size) {
+            val r = LinearLayout(this); r.setPadding(dp(10), 0, dp(10), 0)
+            for (j in i until minOf(i + 2, OrbView.names.size)) {
+                val cell = LinearLayout(this); cell.orientation = LinearLayout.VERTICAL; cell.gravity = Gravity.CENTER
+                cell.background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(22).toFloat(); setStroke(dp(2), if (Store.orb == j) PUR else Color.parseColor("#2A2550")) }
+                val o = OrbView(this); o.style = j
+                cell.addView(o, LinearLayout.LayoutParams(dp(110), dp(110)))
+                cell.addView(tv(OrbView.names[j], 15f).apply { setPadding(0, 0, 0, dp(10)) })
+                cell.setOnClickListener { Store.orb = j; orb.style = j; go(2) }
+                r.addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
+            }
+            l.addView(r); i += 2
+        }
+    }
+
+    private fun chars() = page("Home character", true) { l ->
+        val c = card()
+        c.addView(row("✨", "Sirf orb", if (Store.chr < 0) "✔ selected" else "Koi photo nahi") { Store.chr = -1; refreshHome(); go(3) })
+        for (n in 0 until Store.chars) {
+            if (File(filesDir, "c$n.jpg").exists())
+                c.addView(row("🖼", "Character ${n + 1}", if (Store.chr == n) "✔ selected" else "Tap to select") { Store.chr = n; refreshHome(); go(3) })
+        }
+        l.addView(c)
+        val c2 = card()
+        c2.addView(tv("Apni pasand ki photo (anime ya girl) gallery se add karo, wo Home pe dikhegi.", 14f, DIM))
+        c2.addView(btn("➕ Photo add karo") { startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("image/*"), 7) })
+        l.addView(c2)
+    }
+
+    private fun phone() = page("Phone control", true) { l ->
+        val c = card()
+        c.addView(tv("Background mein bhi chalne ke liye ye teen kaam karo:", 14f, DIM))
+        c.addView(btn("1. Display over other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) })
+        c.addView(btn("2. App permissions (Mic, Phone)") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) })
+        c.addView(btn("3. Background mode ON") {
+            try { startForegroundService(Intent(this, RuhiService::class.java)) } catch (e: Exception) { Toast.makeText(this, "Background mode nahi chala", Toast.LENGTH_SHORT).show() }
+        })
+        l.addView(c)
+    }
+
+    override fun onActivityResult(rc: Int, res: Int, d: Intent?) {
+        super.onActivityResult(rc, res, d)
+        val u = d?.data
+        if (rc == 7 && res == RESULT_OK && u != null) {
+            try {
+                val o = BitmapFactory.Options(); o.inSampleSize = 4
+                val bmp = contentResolver.openInputStream(u)!!.use { BitmapFactory.decodeStream(it, null, o) }!!
+                val n = Store.chars
+                java.io.FileOutputStream(File(filesDir, "c$n.jpg")).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                Store.chars = n + 1; Store.chr = n; refreshHome(); go(3)
+            } catch (e: Exception) { Toast.makeText(this, "Photo nahi khuli", Toast.LENGTH_SHORT).show() }
+        }
     }
 }

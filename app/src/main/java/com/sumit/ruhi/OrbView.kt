@@ -1,163 +1,77 @@
 package com.sumit.ruhi
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RadialGradient
-import android.graphics.Shader
-import android.graphics.SweepGradient
+import android.graphics.*
 import android.view.View
-import kotlin.math.cos
-import kotlin.math.min
-import kotlin.math.sin
+import kotlin.math.*
 
 class OrbView(c: Context) : View(c) {
     var style = 0
-    var live = false
-    private var mode = 0
-    private var level = 0f
-    private var sm = 0f
+    var state = 0 // 0 idle, 1 listening, 2 speaking
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val t0 = System.nanoTime()
+    private val dots = List(90) { floatArrayOf((Math.random() * 6.28).toFloat(), (Math.random() * 0.95).toFloat()) }
 
-    private fun tint(): Int = when (mode) {
-        1 -> 0xFF22D3C5.toInt()
-        2 -> 0xFFFF5FA2.toInt()
-        3 -> 0xFFFFB86B.toInt()
-        else -> 0xFF8B5CF6.toInt()
+    companion object {
+        val names = listOf("Plasma", "Ocean", "Solar", "Lava", "Classic", "Crystal", "Galaxy", "Sound ring", "Black hole", "Eclipse")
+        private val cols = listOf("#FF4FA3,#4A1D7A", "#35E0E8,#0B4F7A", "#FFB020,#C2410C", "#FF5A1F,#4A0E0E", "#B58CFF,#3B1D8F",
+            "#9FE8FF,#2A5F8F", "#B58CFF,#120A2E", "#5CE1FF,#7A3CFF", "#FFB020,#6A2A00", "#FFFFFF,#222222")
+        private const val LISTEN = "#5CF2E0,#0E5E78"
     }
 
-    private fun al(c: Int, a: Float): Int = (c and 0xFFFFFF) or ((a.coerceIn(0f, 1f) * 255).toInt() shl 24)
-
-    override fun onVisibilityAggregated(isVisible: Boolean) {
-        super.onVisibilityAggregated(isVisible)
-        if (isVisible) postInvalidateOnAnimation()
+    private fun sphere(cv: Canvas, cx: Float, cy: Float, r: Float, c0: Int, c1: Int, t: Float) {
+        val hx = cx - r * 0.35f + r * 0.12f * sin(t)
+        p.shader = RadialGradient(hx, cy - r * 0.35f, r * 1.5f, intArrayOf(Color.WHITE, c0, c1), floatArrayOf(0f, 0.3f, 1f), Shader.TileMode.CLAMP)
+        cv.drawCircle(cx, cy, r, p)
+        p.shader = null
     }
 
     override fun onDraw(cv: Canvas) {
-        val t = (System.nanoTime() - t0) / 1e9f
-        if (live) {
-            mode = if (Hub.muted) 0 else Hub.state
-            level = Hub.level
-        } else {
-            mode = 0
-            level = 0.2f
-        }
-        val target = when (mode) {
-            1 -> 0.15f + level * 0.85f
-            3 -> 0.45f + 0.35f * sin(t * 9f)
-            2 -> 0.25f + 0.15f * sin(t * 5f)
-            else -> 0.12f + 0.08f * sin(t * 1.6f)
-        }
-        sm += (target - sm) * 0.12f
-        val cx = width / 2f
-        val cy = height / 2f
-        val r0 = min(width, height) * 0.30f
-        val col = tint()
+        val cx = width / 2f; val cy = height / 2f
+        val t = System.currentTimeMillis() / 1000f
+        val sp = if (state == 1) 5f else if (state == 2) 7f else 1.5f
+        val a = (if (state == 0) 0.02f else 0.07f) * (1f + sin(t * sp))
+        val r = min(cx, cy) * 0.62f * (1f + a)
+        val cc = (if (state == 1) LISTEN else cols[style % cols.size]).split(",").map { Color.parseColor(it) }
+        p.style = Paint.Style.FILL; p.shader = null
+        p.shader = RadialGradient(cx, cy, r * 1.7f, intArrayOf(Color.argb(110, Color.red(cc[0]), Color.green(cc[0]), Color.blue(cc[0])), Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
+        cv.drawCircle(cx, cy, r * 1.7f, p)
+        p.shader = null
         when (style) {
-            1 -> aurora(cv, t, cx, cy, r0, sm, col)
-            2 -> pulse(cv, t, cx, cy, r0, sm, col)
-            3 -> galaxy(cv, t, cx, cy, r0, sm, col)
-            else -> plasma(cv, t, cx, cy, r0, sm, col)
+            6 -> {
+                sphere(cv, cx, cy, r, cc[1], Color.BLACK, t)
+                for (d in dots) {
+                    val ang = d[0] + t * 0.5f * (1.2f - d[1]); val rad = d[1] * r * 0.92f
+                    p.color = Color.argb(200, 255, 255, 255)
+                    cv.drawCircle(cx + cos(ang) * rad, cy + sin(ang) * rad, r * 0.013f, p)
+                }
+            }
+            7 -> {
+                p.strokeWidth = r * 0.05f; p.strokeCap = Paint.Cap.ROUND
+                val amp = if (state == 0) 0.05f else 0.25f
+                for (i in 0 until 60) {
+                    val ang = i * 6.2832f / 60; val l = r * (0.08f + amp * abs(sin(t * 6 + i * 0.7f)))
+                    p.color = if (i % 2 == 0) cc[0] else cc[1]
+                    cv.drawLine(cx + cos(ang) * r, cy + sin(ang) * r, cx + cos(ang) * (r + l), cy + sin(ang) * (r + l), p)
+                }
+                sphere(cv, cx, cy, r * 0.85f, cc[1], Color.BLACK, t)
+            }
+            8 -> {
+                cv.save(); cv.rotate(t * 40f, cx, cy)
+                p.shader = SweepGradient(cx, cy, intArrayOf(cc[0], Color.parseColor("#FF6A00"), cc[0]), null)
+                p.style = Paint.Style.STROKE; p.strokeWidth = r * 0.22f
+                cv.drawCircle(cx, cy, r * 0.95f, p)
+                cv.restore()
+                p.shader = null; p.style = Paint.Style.FILL; p.color = Color.BLACK
+                cv.drawCircle(cx, cy, r * 0.72f, p)
+            }
+            9 -> {
+                p.color = Color.BLACK; cv.drawCircle(cx, cy, r, p)
+                p.style = Paint.Style.STROKE; p.strokeWidth = r * 0.04f; p.color = cc[0]
+                cv.drawCircle(cx, cy, r * 1.02f, p)
+            }
+            else -> sphere(cv, cx, cy, r, cc[0], cc[1], t)
         }
+        p.style = Paint.Style.FILL
         postInvalidateOnAnimation()
-    }
-
-    private fun glow(cv: Canvas, cx: Float, cy: Float, rad: Float, col: Int, a: Float) {
-        p.style = Paint.Style.FILL
-        p.shader = RadialGradient(cx, cy, rad, intArrayOf(al(col, a), al(col, 0f)), null, Shader.TileMode.CLAMP)
-        cv.drawCircle(cx, cy, rad, p)
-        p.shader = null
-    }
-
-    private fun plasma(cv: Canvas, t: Float, cx: Float, cy: Float, r0: Float, e: Float, col: Int) {
-        val r = r0 * (1f + e * 0.10f)
-        glow(cv, cx, cy, r * 1.7f, col, 0.45f)
-        p.style = Paint.Style.FILL
-        p.shader = RadialGradient(
-            cx, cy - r * 0.2f, r * 1.1f,
-            intArrayOf(0xFF6D4BD8.toInt(), 0xFF2A1670.toInt(), 0xFF140B40.toInt()),
-            floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP
-        )
-        cv.drawCircle(cx, cy, r, p)
-        cv.save()
-        val path = Path()
-        path.addCircle(cx, cy, r, Path.Direction.CW)
-        cv.clipPath(path)
-        for (i in 0 until 3) {
-            val a = t * (0.6f + i * 0.35f) + i * 2.1f
-            val bx = cx + cos(a) * r * 0.45f
-            val by = cy + sin(a * 1.3f) * r * 0.45f
-            val br = r * (0.55f + e * 0.25f)
-            p.shader = RadialGradient(bx, by, br, intArrayOf(al(col, 0.85f), al(col, 0f)), null, Shader.TileMode.CLAMP)
-            cv.drawCircle(bx, by, br, p)
-        }
-        val hx = cx - r * 0.45f
-        val hy = cy - r * 0.45f
-        p.shader = RadialGradient(hx, hy, r * 0.35f, intArrayOf(0xFFFFFFFF.toInt(), 0x00FFFFFF), null, Shader.TileMode.CLAMP)
-        cv.drawCircle(hx, hy, r * 0.35f, p)
-        cv.restore()
-        p.shader = null
-    }
-
-    private fun aurora(cv: Canvas, t: Float, cx: Float, cy: Float, r0: Float, e: Float, col: Int) {
-        glow(cv, cx, cy, r0 * 1.7f, col, 0.35f)
-        p.style = Paint.Style.STROKE
-        for (i in 0 until 4) {
-            val rr = r0 * (0.55f + i * 0.17f) * (1f + e * 0.18f * sin(t * 2f + i))
-            p.strokeWidth = r0 * (0.11f - i * 0.02f)
-            val sw = SweepGradient(
-                cx, cy,
-                intArrayOf(al(col, 0f), al(col, 0.95f), al(0xFFFF5FA2.toInt(), 0.85f), al(col, 0f)),
-                null
-            )
-            val m = Matrix()
-            m.setRotate(t * (30f + i * 20f) * (if (i % 2 == 0) 1f else -1f), cx, cy)
-            sw.setLocalMatrix(m)
-            p.shader = sw
-            cv.drawCircle(cx, cy, rr, p)
-        }
-        p.shader = null
-        p.style = Paint.Style.FILL
-        p.color = al(col, 0.9f)
-        cv.drawCircle(cx, cy, r0 * 0.18f * (1f + e * 0.5f), p)
-    }
-
-    private fun pulse(cv: Canvas, t: Float, cx: Float, cy: Float, r0: Float, e: Float, col: Int) {
-        p.shader = null
-        p.style = Paint.Style.STROKE
-        for (i in 0 until 4) {
-            val ph = (t * 0.35f * (1f + e) + i / 4f) % 1f
-            p.strokeWidth = 3f + e * 4f
-            p.color = al(col, (1f - ph) * 0.6f)
-            cv.drawCircle(cx, cy, r0 * (0.45f + ph * 1.1f), p)
-        }
-        p.style = Paint.Style.FILL
-        val rr = r0 * 0.8f * (1f + e * 0.25f)
-        p.shader = RadialGradient(
-            cx, cy, rr,
-            intArrayOf(al(0xFFFFFFFF.toInt(), 0.95f), al(col, 0.9f), al(col, 0f)),
-            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
-        )
-        cv.drawCircle(cx, cy, rr, p)
-        p.shader = null
-    }
-
-    private fun galaxy(cv: Canvas, t: Float, cx: Float, cy: Float, r0: Float, e: Float, col: Int) {
-        glow(cv, cx, cy, r0 * 1.4f, col, 0.3f)
-        p.style = Paint.Style.FILL
-        p.shader = null
-        for (i in 0 until 110) {
-            val f = i / 110f
-            val ang = i * 0.42f + t * (0.35f + e * 1.2f) * (1f - f * 0.5f)
-            val rad = r0 * (0.15f + f * 1.05f) * (1f + e * 0.15f * sin(t * 3f + i))
-            val x = cx + cos(ang) * rad
-            val y = cy + sin(ang) * rad * 0.9f
-            p.color = al(if (i % 4 == 0) 0xFFFFFFFF.toInt() else col, 0.35f + 0.65f * (1f - f))
-            cv.drawCircle(x, y, 1.5f + (i % 3) + e * 2f, p)
-        }
-        glow(cv, cx, cy, r0 * 0.35f * (1f + e), 0xFFFFFFFF.toInt(), 0.9f)
     }
 }
