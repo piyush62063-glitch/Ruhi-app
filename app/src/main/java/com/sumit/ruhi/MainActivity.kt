@@ -32,6 +32,9 @@ class MainActivity : Activity() {
     private var rec: SpeechRecognizer? = null
     private var live = false
     private var thinking = false
+    private var muted = false
+    private var muteBtn: TextView? = null
+    private lateinit var lv: ListenView
     private var fails = 0
     private var sub = 0
     private lateinit var mic: MicView
@@ -46,7 +49,7 @@ class MainActivity : Activity() {
         Store.init(this)
         window.statusBarColor = BG; window.navigationBarColor = BG
         speaker = Speaker(this) { if (live && !thinking) listen() else if (!live) idle() }
-        orb = OrbView(this); status = tv("Tap to Talk", 18f, Color.WHITE); mic = MicView(this) { orb.state }; wave = WaveView(this) { orb.state }; overlay = buildOverlay()
+        orb = OrbView(this); status = tv("ruhi is listening…", 30f, Color.WHITE); mic = MicView(this) { orb.state }; wave = WaveView(this) { orb.state }; overlay = buildOverlay()
         charImg = ImageView(this); avatar = ImageView(this)
         homeView = buildHome()
         val root = FrameLayout(this); root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#0A0A1F"), Color.parseColor("#1A1040"), Color.parseColor("#0A0A1F"))); root.clipChildren = false
@@ -220,15 +223,51 @@ class MainActivity : Activity() {
         charImg.imageMatrix = m; charImg.pivotX = w / 2f; charImg.pivotY = h
     }
 
+    private fun circ(sz: Int, ic: String, col: Int, f: () -> Unit): TextView {
+        val x = tv(ic, 24f, Color.WHITE); x.gravity = Gravity.CENTER
+        x.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(col) }
+        x.setOnClickListener { hap(x); f() }
+        x.layoutParams = LinearLayout.LayoutParams(dp(sz), dp(sz))
+        return x
+    }
+
+    private fun col(b: TextView, label: String): LinearLayout {
+        val c = LinearLayout(this); c.orientation = LinearLayout.VERTICAL; c.gravity = Gravity.CENTER_HORIZONTAL
+        c.addView(b)
+        val l = tv(label, 14f, DIM); l.gravity = Gravity.CENTER
+        l.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) }
+        c.addView(l)
+        c.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(18), 0, dp(18), 0) }
+        return c
+    }
+
     private fun buildOverlay(): FrameLayout {
         val f = FrameLayout(this); f.visibility = View.GONE; f.isClickable = true
-        f.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#F2090918"), Color.parseColor("#F21A0F3D")))
-        f.addView(orb, FrameLayout.LayoutParams(dp(340), dp(340), Gravity.CENTER))
-        val r = LinearLayout(this); r.gravity = Gravity.CENTER
-        r.addView(btn("▾  Minimize") { showOverlay(false) }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
-        r.addView(btn("⏹  End") { toggle() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
-        f.addView(r, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(40)) })
+        f.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#120C2E"), Color.parseColor("#1C1040"), Color.parseColor("#06050F")))
+        lv = ListenView(this) { if (muted) 0 else if (thinking) 3 else orb.state }
+        f.addView(lv, FrameLayout.LayoutParams(-1, -1))
+        val title = tv("ruhi", 34f, Color.WHITE); title.typeface = Typeface.create("serif", Typeface.NORMAL)
+        f.addView(title, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(32), 0, 0) })
+        val top = circ(52, "▾", Color.parseColor("#1E1A4A")) { showOverlay(false) }
+        f.addView(top, FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(28), dp(24), 0) })
+        status.gravity = Gravity.CENTER; status.typeface = Typeface.create("serif", Typeface.ITALIC)
+        f.addView(status, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(214) })
+        val sub = tv("Keeps listening if you leave this screen.", 14f, DIM); sub.gravity = Gravity.CENTER
+        f.addView(sub, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(176) })
+        val r = LinearLayout(this); r.gravity = Gravity.CENTER; r.orientation = LinearLayout.HORIZONTAL
+        val mb = circ(64, "🎙", Color.parseColor("#1E1A4A")) { doMute() }; muteBtn = mb
+        r.addView(col(mb, "Mute"))
+        r.addView(col(circ(78, "✕", Color.parseColor("#F26B7A")) { toggle() }, "End"))
+        r.addView(col(circ(64, "▾", Color.parseColor("#1E1A4A")) { showOverlay(false) }, "Minimize"))
+        f.addView(r, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = dp(40) })
         return f
+    }
+
+    private fun doMute() {
+        muted = !muted
+        muteBtn?.text = if (muted) "🔇" else "🎙"
+        if (muted) { orb.state = 0; rec?.cancel(); status.text = "ruhi is muted…" }
+        else if (live && !thinking && !speaker.busy()) listen()
     }
 
     private fun showOverlay(v: Boolean) {
@@ -240,14 +279,14 @@ class MainActivity : Activity() {
 
     // ---------- voice loop ----------
     private fun toggle() {
-        if (live) { live = false; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; Sfx.ping(); showOverlay(true); listen() }
+        if (live) { live = false; muted = false; muteBtn?.text = "🎙"; speaker.stop(); rec?.cancel(); idle() } else { live = true; fails = 0; Sfx.ping(); showOverlay(true); listen() }
     }
 
     private fun idle() { orb.state = 0; status.text = "Tap to Talk"; showOverlay(false) }
 
     private fun listen() {
-        if (!live) return
-        orb.state = 1; status.text = "Sun rahi hoon..."
+        if (!live || muted) return
+        orb.state = 1; status.text = "ruhi is listening…"
         if (rec == null) {
             rec = SpeechRecognizer.createSpeechRecognizer(this)
             rec!!.setRecognitionListener(object : RecognitionListener {
@@ -296,14 +335,14 @@ class MainActivity : Activity() {
     }
 
     private fun ask(q: String) {
-        thinking = true; orb.state = 0; status.text = "Soch rahi hoon..."
+        thinking = true; orb.state = 0; status.text = "ruhi is thinking…"
         log.add("Tum: $q"); Store.addHist(q)
         val act = Actions.run(this, q)
         if (act != null) { log.add("Ruhi: $act"); thinking = false; orb.state = 2; speaker.say(act); return }
         log.add("Ruhi: ")
         val idx = log.size - 1
         Brain.ask(q,
-            { s -> ui.post { orb.state = 2; status.text = "Bol rahi hoon..."; log[idx] = log[idx] + s + " "; speaker.say(s); if (curTab == 1) show(1) } },
+            { s -> ui.post { orb.state = 2; status.text = "ruhi is speaking…"; log[idx] = log[idx] + s + " "; speaker.say(s); if (curTab == 1) show(1) } },
             { ui.post { thinking = false; if (!speaker.busy()) { if (live) listen() else idle() } } },
             { m -> ui.post { thinking = false; log[idx] = "Ruhi: ($m)"; Toast.makeText(this, m, Toast.LENGTH_SHORT).show(); speaker.say("Sumit, net ya key mein kuch gadbad hai") } })
     }
