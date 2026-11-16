@@ -11,8 +11,8 @@ android {
         applicationId = "com.sumit.ruhi"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "6.0"
+        versionCode = 9
+        versionName = "9.0"
     }
 
     signingConfigs {
