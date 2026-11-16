@@ -44,7 +44,7 @@ class Speaker(ctx: Context, private val onIdle: () -> Unit) {
     @Volatile private var ok = false
     @Volatile private var latch: CountDownLatch? = null
     @Volatile private var cur: AudioTrack? = null
-    private val pool = Executors.newFixedThreadPool(3)
+    private val pool = Executors.newFixedThreadPool(2)
     private val q = LinkedBlockingQueue<Pair<String, Future<ByteArray?>>>()
     private val tts: TextToSpeech = TextToSpeech(ctx) { s -> if (s == TextToSpeech.SUCCESS) { ok = true; setup() } }
 
@@ -65,7 +65,7 @@ class Speaker(ctx: Context, private val onIdle: () -> Unit) {
             try {
                 val (txt, fut) = q.take()
                 val g = gen
-                val pcm = try { fut.get(3500, TimeUnit.MILLISECONDS) } catch (e: Exception) { null }
+                val pcm = try { fut.get() } catch (e: Exception) { null }
                 if (g == gen) { if (pcm != null) play(pcm, g) else phone(txt) }
                 if (g == gen && n.decrementAndGet() <= 0) { n.set(0); Handler(Looper.getMainLooper()).post { onIdle() } }
             } catch (e: Exception) { }
@@ -92,6 +92,13 @@ class Speaker(ctx: Context, private val onIdle: () -> Unit) {
     }
 
     private fun kore(t: String): ByteArray? {
+        var r = koreOnce(t)
+        if (r == null) { try { Thread.sleep(600) } catch (e: Exception) { }; r = koreOnce(t) }
+        if (r == null) { try { Thread.sleep(1200) } catch (e: Exception) { }; r = koreOnce(t) }
+        return r
+    }
+
+    private fun koreOnce(t: String): ByteArray? {
         return try {
             val c = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=" + Store.gemini).openConnection() as HttpURLConnection
             c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 8000; c.readTimeout = 20000
