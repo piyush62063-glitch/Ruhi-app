@@ -9,7 +9,7 @@ class MicView(c: Context, private val st: () -> Int) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     override fun onDraw(cv: Canvas) {
         val cx = width / 2f; val cy = height / 2f
-        val s = st(); val t = System.currentTimeMillis() / 1000f
+        val s = st(); val t = Clk.t()
         val rr = min(cx, cy) * 0.74f * (1f + (if (s == 0) 0f else 0.05f * (1f + sin(t * 6f))))
         p.style = Paint.Style.FILL
         p.shader = RadialGradient(cx, cy, rr * 1.5f, intArrayOf(Color.argb(if (s == 0) 70 else 150, 155, 92, 255), Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
@@ -35,7 +35,7 @@ class WaveView(c: Context, private val st: () -> Int) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     override fun onDraw(cv: Canvas) {
         val n = 34; val gap = width / (n + 1f); val cy = height / 2f
-        val t = System.currentTimeMillis() / 1000f; val s = st()
+        val t = Clk.t(); val s = st()
         p.strokeCap = Paint.Cap.ROUND; p.color = Color.parseColor("#9B5CFF"); p.strokeWidth = gap * 0.32f
         for (i in 0 until n) {
             val x = gap * (i + 1)

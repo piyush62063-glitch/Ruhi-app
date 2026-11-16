@@ -13,7 +13,6 @@ import android.text.InputType
 import android.view.*
 import android.widget.*
 import java.io.File
-import kotlin.math.sin
 
 class MainActivity : Activity() {
     private val BG = Color.parseColor("#0B0B1A")
@@ -41,9 +40,11 @@ class MainActivity : Activity() {
     private lateinit var hero: FrameLayout
     private lateinit var fade: View
     private var heroBmp: Bitmap? = null
+    private lateinit var hint: TextView
+    private lateinit var muteCol: LinearLayout
     private var muted = false
-    private lateinit var muteBtn: TextView
-    private lateinit var sparkle: SparkleView
+    private var musicMuted = false
+    private val am by lazy { getSystemService(AUDIO_SERVICE) as android.media.AudioManager }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -61,30 +62,14 @@ class MainActivity : Activity() {
         root.setOnApplyWindowInsetsListener { v, i -> v.setPadding(0, i.systemWindowInsetTop, 0, i.systemWindowInsetBottom); i }
         setContentView(root)
         refreshHome(); show(0)
-        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
+        Brain.warm()
     }
 
-    override fun onDestroy() { super.onDestroy(); speaker.shutdown(); rec?.destroy() }
+    override fun onDestroy() { super.onDestroy(); beepMute(false); musicMute(false); speaker.shutdown(); rec?.destroy() }
 
     private fun hap(v: View) { v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
-    private val breathe = object : Runnable {
-        override fun run() {
-            if (heroBmp != null) {
-                val t = System.currentTimeMillis() % 100000000L / 1000.0
-                val s = orb.state
-                val amp = if (s == 2) 0.03f else if (s == 1) 0.02f else 0.012f
-                val sp = if (s == 2) 5.0 else if (s == 1) 2.2 else 1.1
-                val k = 1f + amp * (1f + sin(t * sp).toFloat())
-                charImg.scaleX = k; charImg.scaleY = k
-                charImg.translationY = if (s == 2) sin(t * 9.0).toFloat() * dp(2) else sin(t * 1.1).toFloat() * dp(3)
-                charImg.translationX = sin(t * 0.7).toFloat() * dp(2)
-            }
-            ui.postDelayed(this, 16)
-        }
-    }
-
-    override fun onResume() { super.onResume(); ui.removeCallbacks(breathe); ui.post(breathe) }
-    override fun onPause() { super.onPause(); ui.removeCallbacks(breathe) }
+    private var floatAnim: android.animation.ObjectAnimator? = null
 
     private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
 
@@ -172,8 +157,6 @@ class MainActivity : Activity() {
         hero = FrameLayout(this); hero.clipChildren = true
         charImg.scaleType = ImageView.ScaleType.MATRIX
         hero.addView(charImg, FrameLayout.LayoutParams(-1, -1))
-        sparkle = SparkleView(this) { orb.state }
-        hero.addView(sparkle, FrameLayout.LayoutParams(-1, -1))
         fade = View(this)
         fade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.TRANSPARENT, Color.parseColor("#0A0A1F")))
         hero.addView(fade, FrameLayout.LayoutParams(-1, dp(190), Gravity.BOTTOM))
@@ -208,7 +191,7 @@ class MainActivity : Activity() {
         }
         fc("💬", "Chat", "Get instant answers") { sub = 0; show(1) }
         fc("🧑", "Characters", "Change her look") { go(3) }
-        fc("🎨", "Orbs", "18 live 3D orbs") { go(2) }
+        fc("🎨", "Orbs", "10 glowing styles") { go(2) }
         l.addView(r, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(12), 0, dp(12), 0) })
         sv.addView(l); return sv
     }
@@ -217,11 +200,17 @@ class MainActivity : Activity() {
         orb.style = Store.orb
         val bmp = loadChar(Store.chr)
         val lp = hero.layoutParams
-        charImg.scaleX = 1f; charImg.scaleY = 1f; charImg.translationX = 0f; charImg.translationY = 0f
+        floatAnim?.cancel(); charImg.scaleX = 1f; charImg.scaleY = 1f
         if (bmp != null) {
             heroBmp = bmp; charImg.setImageBitmap(bmp); avatar.setImageBitmap(bmp)
             fade.visibility = View.VISIBLE; lp.height = dp(380)
-            charImg.post { fitTop() }
+            charImg.post {
+                fitTop()
+                floatAnim = android.animation.ObjectAnimator.ofFloat(charImg, "scaleX", 1f, 1.035f).apply {
+                    duration = 2600; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE
+                    addUpdateListener { charImg.scaleY = charImg.scaleX }; start()
+                }
+            }
         } else {
             heroBmp = null; charImg.setImageDrawable(null); avatar.setImageDrawable(null); fade.visibility = View.GONE; lp.height = dp(120)
         }
@@ -237,29 +226,82 @@ class MainActivity : Activity() {
         charImg.imageMatrix = m; charImg.pivotX = w / 2f; charImg.pivotY = h
     }
 
+    private fun roundBtn(icon: String, label: String, bg: Int, size: Int, f: () -> Unit): LinearLayout {
+        val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL; col.gravity = Gravity.CENTER_HORIZONTAL
+        val ic = tv(icon, if (size > 70) 28f else 22f, Color.WHITE).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(bg); setStroke(dp(1), Color.parseColor("#33FFFFFF")) }
+        }
+        ic.setOnClickListener { hap(ic); ic.animate().scaleX(0.9f).scaleY(0.9f).setDuration(70).withEndAction { ic.animate().scaleX(1f).scaleY(1f).setDuration(110).start(); f() }.start() }
+        col.addView(ic, LinearLayout.LayoutParams(dp(size), dp(size)))
+        col.addView(tv(label, 13f, DIM).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) })
+        return col
+    }
+
     private fun buildOverlay(): FrameLayout {
         val f = FrameLayout(this); f.visibility = View.GONE; f.isClickable = true
-        f.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#FF090918"), Color.parseColor("#FF1A0F3D"), Color.parseColor("#FF090918")))
-        f.addView(StarView(this), FrameLayout.LayoutParams(-1, -1))
-        f.addView(tv("ruhi", 34f, Color.WHITE, true), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(40), 0, 0) })
-        f.addView(orb, FrameLayout.LayoutParams(dp(340), dp(340), Gravity.CENTER).apply { bottomMargin = dp(40) })
-        status.gravity = Gravity.CENTER; status.textSize = 28f; status.typeface = Typeface.create("serif", Typeface.ITALIC)
-        f.addView(status, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER).apply { topMargin = dp(290) })
-        f.addView(tv("Screen se bahar jaogi tab bhi sunti rahegi.", 13f, DIM).apply { gravity = Gravity.CENTER },
-            FrameLayout.LayoutParams(-1, -2, Gravity.CENTER).apply { topMargin = dp(350) })
-        val r = LinearLayout(this); r.gravity = Gravity.CENTER
-        muteBtn = btn("🎤 Mute") {
-            muted = !muted
-            muteBtn.text = if (muted) "🔇 Unmute" else "🎤 Mute"
-            if (muted) { rec?.cancel(); if (!thinking && !speaker.busy()) { orb.state = 0; status.text = "Mute hai" } }
-            else if (live && !thinking && !speaker.busy()) listen()
+        f.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.parseColor("#FA070714"), Color.parseColor("#FA1A0F3D")))
+        f.addView(StarsView(this), FrameLayout.LayoutParams(-1, -1))
+        val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL
+        // top bar
+        val top = LinearLayout(this); top.gravity = Gravity.CENTER_VERTICAL; top.setPadding(dp(24), dp(20), dp(20), 0)
+        top.addView(tv("ruhi", 32f, Color.WHITE).apply { typeface = Typeface.create("serif", Typeface.NORMAL) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val mini = tv("⌄", 26f, Color.WHITE).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#33283060")); setStroke(dp(1), Color.parseColor("#33FFFFFF")) }
+            setOnClickListener { hap(this); showOverlay(false) }
         }
-        r.addView(muteBtn, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
-        r.addView(btn("⏹ End") { toggle() }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
-        r.addView(btn("▾ Hide") { showOverlay(false) }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
-        f.addView(r, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(40)) })
+        top.addView(mini, LinearLayout.LayoutParams(dp(48), dp(48)))
+        col.addView(top, LinearLayout.LayoutParams(-1, -2))
+        // orb zone (takes all free space, orb centered)
+        val zone = FrameLayout(this)
+        zone.addView(orb, FrameLayout.LayoutParams(dp(340), dp(340), Gravity.CENTER))
+        col.addView(zone, LinearLayout.LayoutParams(-1, 0, 1f))
+        // status + hint
+        status.gravity = Gravity.CENTER; status.textSize = 28f
+        status.typeface = Typeface.create("serif", Typeface.ITALIC)
+        col.addView(status, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(20), 0, dp(20), 0) })
+        hint = tv("Screen chhodne par bhi sunti rahegi.", 14f, DIM).apply { gravity = Gravity.CENTER; maxLines = 2 }
+        col.addView(hint, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(28), dp(10), dp(28), dp(28)) })
+        // buttons
+        val r = LinearLayout(this); r.gravity = Gravity.CENTER; r.weightSum = 3f
+        muteCol = roundBtn("🎙", "Mute", Color.parseColor("#33283060"), 64) { toggleMute() }
+        r.addView(muteCol, LinearLayout.LayoutParams(0, -2, 1f))
+        r.addView(roundBtn("✕", "End", Color.parseColor("#F0F06A7A"), 84) { toggle() }, LinearLayout.LayoutParams(0, -2, 1f))
+        r.addView(roundBtn("⌄", "Minimize", Color.parseColor("#33283060"), 64) { showOverlay(false) }, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(r, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(16), 0, dp(16), dp(36)) })
+        f.addView(col, FrameLayout.LayoutParams(-1, -1))
         return f
     }
+
+    private fun muteUi() {
+        val ic = muteCol.getChildAt(0) as TextView
+        val lb = muteCol.getChildAt(1) as TextView
+        ic.text = if (muted) "🔇" else "🎙"
+        lb.text = if (muted) "Unmute" else "Mute"
+    }
+
+    private fun toggleMute() {
+        if (!live) return
+        muted = !muted
+        muteUi()
+        if (muted) { rec?.cancel(); orb.state = 0; status.text = "Mute hai"; hint.text = "Unmute dabao, phir bolna" }
+        else if (!thinking && !speaker.busy()) listen()
+    }
+
+    private fun beepMute(on: Boolean) {
+        val d = if (on) android.media.AudioManager.ADJUST_MUTE else android.media.AudioManager.ADJUST_UNMUTE
+        for (st in intArrayOf(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.STREAM_SYSTEM)) {
+            try { am.adjustStreamVolume(st, d, 0) } catch (e: Exception) { }
+        }
+    }
+
+    private fun musicMute(on: Boolean) {
+        try { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (on) android.media.AudioManager.ADJUST_MUTE else android.media.AudioManager.ADJUST_UNMUTE, 0); musicMuted = on } catch (e: Exception) { }
+    }
+
+    private fun startSvc() { try { startForegroundService(Intent(this, RuhiService::class.java)) } catch (e: Exception) { } }
+    private fun stopSvc() { try { stopService(Intent(this, RuhiService::class.java)) } catch (e: Exception) { } }
 
     private fun showOverlay(v: Boolean) {
         if (v) { overlay.alpha = 0f; overlay.visibility = View.VISIBLE; overlay.animate().alpha(1f).setDuration(220).start() }
@@ -270,28 +312,39 @@ class MainActivity : Activity() {
 
     // ---------- voice loop ----------
     private fun toggle() {
-        if (live) { live = false; muted = false; muteBtn.text = "🎤 Mute"; speaker.stop(); rec?.cancel(); idle() } else { live = true; muted = false; fails = 0; Sfx.ping(); showOverlay(true); listen() }
+        if (live) {
+            live = false; muted = false; speaker.stop(); rec?.cancel()
+            beepMute(false); musicMute(false); stopSvc(); idle()
+        } else {
+            live = true; muted = false; fails = 0; Sfx.ping(); startSvc(); beepMute(true); Brain.warm()
+            muteUi()
+            showOverlay(true); listen()
+        }
     }
 
     private fun idle() { orb.state = 0; status.text = "Tap to Talk"; showOverlay(false) }
 
     private fun listen() {
         if (!live || muted) return
-        orb.state = 1; status.text = "Sun rahi hoon..."
+        orb.state = 1; status.text = "Sun rahi hoon..."; hint.text = "Screen chhodne par bhi sunti rahegi."
+        musicMute(true); ui.postDelayed({ if (musicMuted) musicMute(false) }, 900)
         if (rec == null) {
             rec = SpeechRecognizer.createSpeechRecognizer(this)
             rec!!.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(p: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(v: Float) {}
+                override fun onRmsChanged(v: Float) { orb.rms = ((v + 2f) / 12f).coerceIn(0f, 1f) }
                 override fun onBufferReceived(b: ByteArray?) {}
                 override fun onEndOfSpeech() {}
-                override fun onPartialResults(b: Bundle?) {}
+                override fun onPartialResults(b: Bundle?) {
+                    val pt = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                    if (!pt.isNullOrBlank()) hint.text = pt
+                }
                 override fun onEvent(t: Int, b: Bundle?) {}
                 override fun onError(e: Int) {
                     if (!live || thinking || muted) return
                     fails++
-                    if (fails > 12) { live = false; idle(); status.text = "Mic error $e, phir se tap karo"; return }
+                    if (fails > 12) { live = false; beepMute(false); musicMute(false); stopSvc(); idle(); status.text = "Mic error $e, phir se tap karo"; return }
                     ui.postDelayed({ listen() }, 700)
                 }
                 override fun onResults(b: Bundle?) {
@@ -304,11 +357,14 @@ class MainActivity : Activity() {
         val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 900L)
+        i.putExtra("android.speech.extra.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 700L)
         rec!!.startListening(i)
     }
 
     private fun ask(q: String) {
-        thinking = true; orb.state = 0; status.text = "Soch rahi hoon..."
+        thinking = true; orb.state = 0; status.text = "Soch rahi hoon..."; hint.text = "\u201C" + q + "\u201D"
         log.add("Tum: $q"); Store.addHist(q)
         val act = Actions.run(this, q)
         if (act != null) { log.add("Ruhi: $act"); thinking = false; orb.state = 2; speaker.say(act); return }
@@ -389,20 +445,7 @@ class MainActivity : Activity() {
     }
 
     private fun look() = page("Look & feel", true) { l ->
-        val big = OrbView(this); big.style = Store.orb; big.state = 0
-        val bc = card()
-        bc.addView(big, LinearLayout.LayoutParams(-1, dp(230)))
-        bc.addView(tv(OrbView.names[Store.orb % OrbView.names.size], 28f, Color.WHITE, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -2))
-        val chips = LinearLayout(this); chips.gravity = Gravity.CENTER
-        val labs = listOf("Idle", "Listening", "Speaking"); val cs = ArrayList<TextView>()
-        fun paint() { for (k in cs.indices) cs[k].background = GradientDrawable().apply { cornerRadius = dp(22).toFloat(); setColor(if (big.state == k) PUR else Color.parseColor("#22FFFFFF")) } }
-        for (k in 0..2) {
-            val c = tv(labs[k], 14f); c.setPadding(dp(16), dp(8), dp(16), dp(8))
-            c.setOnClickListener { big.state = k; paint() }
-            cs.add(c); chips.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), dp(10), dp(4), 0) })
-        }
-        paint(); bc.addView(chips, LinearLayout.LayoutParams(-1, -2)); l.addView(bc)
-        l.addView(tv("Orb style chuno", 14f, DIM).apply { setPadding(dp(20), dp(6), 0, dp(6)) })
+        l.addView(tv("Orb style chuno", 14f, DIM).apply { setPadding(dp(20), 0, 0, dp(6)) })
         var i = 0
         while (i < OrbView.names.size) {
             val r = LinearLayout(this); r.setPadding(dp(10), 0, dp(10), 0)

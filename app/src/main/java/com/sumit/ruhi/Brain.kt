@@ -11,6 +11,18 @@ object Brain {
     private val hist = ArrayList<Pair<String, String>>()
     private var rot = 0
 
+    fun warm() {
+        Thread {
+            try {
+                val k = Store.groq.split(",").map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return@Thread
+                val c = URL("https://api.groq.com/openai/v1/models").openConnection() as HttpURLConnection
+                c.connectTimeout = 4000; c.readTimeout = 4000
+                c.setRequestProperty("Authorization", "Bearer $k")
+                c.responseCode
+            } catch (e: Exception) { }
+        }.start()
+    }
+
     fun ask(q: String, onSent: (String) -> Unit, onDone: () -> Unit, onErr: (String) -> Unit) {
         Thread {
             try {
@@ -41,18 +53,19 @@ object Brain {
         for ((r, t) in hist) m.put(JSONObject().put("role", r).put("content", t))
         m.put(JSONObject().put("role", "user").put("content", q))
         val body = JSONObject().put("model", "llama-3.1-8b-instant").put("stream", true)
-            .put("max_tokens", 120).put("temperature", 0.8).put("messages", m)
+            .put("max_tokens", 100).put("temperature", 0.8).put("messages", m)
         c.outputStream.use { it.write(body.toString().toByteArray()) }
         if (c.responseCode != 200) throw Exception("groq ${c.responseCode}")
-        val all = StringBuilder(); val buf = StringBuilder()
+        val all = StringBuilder(); val buf = StringBuilder(); var first = true
         c.inputStream.bufferedReader().forEachLine { line ->
             if (line.startsWith("data:") && !line.contains("[DONE]")) {
                 try {
                     val d = JSONObject(line.substring(5).trim()).getJSONArray("choices").getJSONObject(0)
                         .getJSONObject("delta").optString("content", "")
                     all.append(d); buf.append(d)
-                    val i = buf.indexOfLast { ch -> ch in ".!?।\n" }
-                    if (i >= 0) { cb(buf.substring(0, i + 1)); buf.delete(0, i + 1) }
+                    var i = buf.indexOfLast { ch -> ch in ".!?।\n" }
+                    if (i < 0 && first && buf.length >= 16) i = buf.indexOfLast { ch -> ch == ',' }
+                    if (i >= 0) { cb(buf.substring(0, i + 1)); buf.delete(0, i + 1); first = false }
                 } catch (e: Exception) { }
             }
         }

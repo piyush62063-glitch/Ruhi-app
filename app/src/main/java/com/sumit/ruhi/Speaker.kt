@@ -44,7 +44,7 @@ class Speaker(ctx: Context, private val onIdle: () -> Unit) {
     @Volatile private var ok = false
     @Volatile private var latch: CountDownLatch? = null
     @Volatile private var cur: AudioTrack? = null
-    private val pool = Executors.newFixedThreadPool(2)
+    private val pool = Executors.newFixedThreadPool(3)
     private val q = LinkedBlockingQueue<Pair<String, Future<ByteArray?>>>()
     private val tts: TextToSpeech = TextToSpeech(ctx) { s -> if (s == TextToSpeech.SUCCESS) { ok = true; setup() } }
 
@@ -65,7 +65,7 @@ class Speaker(ctx: Context, private val onIdle: () -> Unit) {
             try {
                 val (txt, fut) = q.take()
                 val g = gen
-                val pcm = try { fut.get() } catch (e: Exception) { null }
+                val pcm = try { fut.get(3500, TimeUnit.MILLISECONDS) } catch (e: Exception) { null }
                 if (g == gen) { if (pcm != null) play(pcm, g) else phone(txt) }
                 if (g == gen && n.decrementAndGet() <= 0) { n.set(0); Handler(Looper.getMainLooper()).post { onIdle() } }
             } catch (e: Exception) { }
