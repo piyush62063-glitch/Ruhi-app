@@ -1,22 +1,109 @@
 package com.sumit.ruhi
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
+import android.os.Build
+import android.provider.ContactsContract
 import android.provider.Settings
 
 object Actions {
+    // Hindi (Devanagari) bolne par voice engine Devanagari text deta hai, isliye pehle Roman mein badalte hain.
+    private val dict: List<Pair<String, String>> = listOf(
+        "यू ट्यूब" to "youtube", "यूट्यूब" to "youtube", "यूटयूब" to "youtube", "यूट्यब" to "youtube",
+        "व्हाट्सएप" to "whatsapp", "व्हाट्सऐप" to "whatsapp", "वॉट्सऐप" to "whatsapp", "वॉट्सएप" to "whatsapp",
+        "व्हाट्स एप" to "whatsapp", "वाट्सएप" to "whatsapp", "व्हाट्सअप" to "whatsapp",
+        "फ्लैशलाइट" to "torch", "फ़्लैशलाइट" to "torch", "टॉर्च" to "torch", "टोर्च" to "torch", "टार्च" to "torch", "फ्लैश" to "torch",
+        "वाई-फाई" to "wifi", "वाई फाई" to "wifi", "वाईफाई" to "wifi", "वाइफाई" to "wifi", "वायफाय" to "wifi",
+        "ब्लू टूथ" to "bluetooth", "ब्लूटूथ" to "bluetooth", "ब्लूटुथ" to "bluetooth",
+        "मोबाइल डेटा" to "internet", "इंटरनेट" to "internet", "डेटा" to "internet",
+        "नेविगेशन" to "navigate", "नेविगेट" to "navigate", "डायरेक्शन" to "navigate", "रास्ता" to "navigate",
+        "रस्ता" to "navigate", "नक्शा" to "navigate", "मैप्स" to "navigate", "मैप" to "navigate",
+        "सॉन्ग" to "song", "सोंग" to "song", "गाने" to "song", "गाना" to "song", "गीत" to "song",
+        "चला दो" to "chalao", "चलाइए" to "chalao", "चलाओ" to "chalao",
+        "खोल दो" to "kholo", "खोलिए" to "kholo", "खोलो" to "kholo", "खोल" to "kholo",
+        "बन्द" to "band", "बंद" to "band", "ऑफ़" to "band", "ऑफ" to "band",
+        "चालू" to "on", "ऑन" to "on", "जलाओ" to "on",
+        "कॉल" to "call", "फ़ोन" to "call", "फोन" to "call",
+        "सर्च" to "search", "प्ले" to "play"
+    )
+
+    private val appAlias = mapOf(
+        "इंस्टाग्राम" to "instagram", "फेसबुक" to "facebook", "कैमरा" to "camera", "गैलरी" to "gallery",
+        "सेटिंग" to "settings", "सेटिंग्स" to "settings", "क्रोम" to "chrome", "स्नैपचैट" to "snapchat",
+        "टेलीग्राम" to "telegram", "गूगल" to "google", "जीमेल" to "gmail", "फोनपे" to "phonepe",
+        "पेटीएम" to "paytm", "कैलकुलेटर" to "calculator", "घड़ी" to "clock", "म्यूजिक" to "music",
+        "प्ले स्टोर" to "play store", "स्पॉटिफाई" to "spotify", "मैसेज" to "messages", "संदेश" to "messages",
+        "फाइल" to "files", "कैलेंडर" to "calendar", "ट्विटर" to "x", "नेटफ्लिक्स" to "netflix"
+    )
+
     private val stop = setOf(
         "youtube", "yt", "par", "pe", "me", "mein", "pr", "search", "karo", "kar", "do", "chalao", "chala", "play",
         "gana", "gaana", "song", "songs", "ka", "ki", "ko", "kholo", "open", "sunao", "suna", "mujhe", "ruhi",
         "whatsapp", "message", "bhejo", "bhej", "likho", "navigate", "rasta", "maps", "map", "directions", "route",
-        "call", "phone", "laga", "lagao", "to", "ke", "liye", "start", "app", "khol", "please", "yaar"
+        "call", "phone", "laga", "lagao", "to", "ke", "liye", "start", "app", "khol", "please", "yaar",
+        "on", "band", "off", "se", "hai", "jana", "chalo", "le", "ek", "zara", "jara", "wala", "wali",
+        "पर", "में", "का", "की", "को", "के", "लिए", "से", "तो", "हो", "है", "जाना", "चलो", "ले", "मुझे", "रुही",
+        "प्लीज", "यार", "ज़रा", "जरा", "एक", "वाला", "वाली", "करो", "कर", "दो", "ऐप", "एप", "ऐप्प", "app"
     )
 
+    private fun norm(raw: String): String {
+        var t = " " + raw.lowercase().trim() + " "
+        for ((d, r) in dict) t = t.replace(d, " $r ")
+        return t.replace(Regex("\\s+"), " ").trim()
+    }
+
     private fun clean(t: String) = t.split(" ").filter { it.isNotBlank() && it !in stop }.joinToString(" ")
+
+    // ---------- Devanagari -> Roman (app / contact naam match karne ke liye)
+    private val cons = mapOf(
+        'क' to "k", 'ख' to "kh", 'ग' to "g", 'घ' to "gh", 'च' to "ch", 'छ' to "chh", 'ज' to "j", 'झ' to "jh",
+        'ट' to "t", 'ठ' to "th", 'ड' to "d", 'ढ' to "dh", 'ण' to "n", 'त' to "t", 'थ' to "th", 'द' to "d",
+        'ध' to "dh", 'न' to "n", 'प' to "p", 'फ' to "f", 'ब' to "b", 'भ' to "bh", 'म' to "m", 'य' to "y",
+        'र' to "r", 'ल' to "l", 'व' to "v", 'श' to "sh", 'ष' to "sh", 'स' to "s", 'ह' to "h"
+    )
+    private val indep = mapOf(
+        'अ' to "a", 'आ' to "aa", 'इ' to "i", 'ई' to "ee", 'उ' to "u", 'ऊ' to "oo", 'ए' to "e", 'ऐ' to "ai",
+        'ओ' to "o", 'औ' to "au", 'ऑ' to "o"
+    )
+    private val matra = mapOf(
+        'ा' to "aa", 'ि' to "i", 'ी' to "ee", 'ु' to "u", 'ू' to "oo", 'े' to "e", 'ै' to "ai",
+        'ो' to "o", 'ौ' to "au", 'ॉ' to "o", 'ं' to "n", 'ँ' to "n", 'ः' to "h"
+    )
+
+    private fun translit(s: String): String {
+        val o = StringBuilder()
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            val cv = cons[c]
+            if (cv != null) {
+                o.append(cv)
+                var n = if (i + 1 < s.length) s[i + 1] else ' '
+                if (n == '\u093C') { i++; n = if (i + 1 < s.length) s[i + 1] else ' ' }
+                if (matra.containsKey(n) || n == '\u094D') { /* aage handle hoga */ }
+                else if (n.isLetter()) o.append("a")
+            } else if (indep.containsKey(c)) o.append(indep[c])
+            else if (matra.containsKey(c)) o.append(matra[c])
+            else if (c == '\u094D' || c == '\u093C') { }
+            else o.append(c)
+            i++
+        }
+        return o.toString()
+    }
+
+    private fun skel(s: String): String {
+        val r = translit(s.lowercase()).replace("w", "v").replace("c", "k").replace("q", "k")
+            .filter { it.isLetter() && it !in "aeiouyh" }
+        val b = StringBuilder()
+        for (ch in r) if (b.isEmpty() || b.last() != ch) b.append(ch)
+        return b.toString()
+    }
 
     private fun go(a: Activity, i: Intent): Boolean = try {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); a.startActivity(i); true
@@ -28,54 +115,111 @@ object Actions {
         cm.setTorchMode(id, on); true
     } catch (e: Exception) { false }
 
-    private fun openApp(a: Activity, name: String): Boolean {
+    private fun openApp(a: Activity, name0: String): Boolean {
         val pm = a.packageManager
-        val q = name.trim().lowercase()
+        var q = name0.trim().lowercase()
         if (q.isEmpty()) return false
+        for ((d, r) in appAlias) q = q.replace(d, r)
         val list = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-        val hit = list.firstOrNull { it.loadLabel(pm).toString().lowercase() == q }
-            ?: list.firstOrNull { it.loadLabel(pm).toString().lowercase().contains(q) }
-            ?: return false
-        val li = pm.getLaunchIntentForPackage(hit.activityInfo.packageName) ?: return false
+        val labels = list.map { it.loadLabel(pm).toString().lowercase() }
+        var idx = labels.indexOfFirst { it == q }
+        if (idx < 0) idx = labels.indexOfFirst { it.contains(q) }
+        if (idx < 0) {
+            val sq = skel(q)
+            if (sq.length >= 2) {
+                idx = labels.indexOfFirst { skel(it) == sq }
+                if (idx < 0 && sq.length >= 3) idx = labels.indexOfFirst { val sl = skel(it); sl.isNotEmpty() && (sl.contains(sq) || sq.contains(sl)) }
+            }
+        }
+        if (idx < 0) return false
+        val li = pm.getLaunchIntentForPackage(list[idx].activityInfo.packageName) ?: return false
         return go(a, li)
     }
 
+    private fun findNumber(a: Activity, name: String): String? {
+        if (a.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
+        val q = name.lowercase().trim()
+        if (q.isEmpty()) return null
+        val sq = skel(q)
+        var best: String? = null
+        var bestScore = 0
+        try {
+            val c = a.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null, null, null
+            )
+            c?.use {
+                while (it.moveToNext()) {
+                    val n = (it.getString(0) ?: "").lowercase()
+                    val num = it.getString(1) ?: continue
+                    val s = skel(n)
+                    var sc = 0
+                    if (n == q) sc = 100
+                    else if (n.contains(q)) sc = 80
+                    else if (s.isNotEmpty() && sq.isNotEmpty() && s == sq) sc = 70
+                    else if (sq.length >= 3 && s.isNotEmpty() && (s.startsWith(sq) || sq.startsWith(s))) sc = 50
+                    if (sc > bestScore) { bestScore = sc; best = num }
+                }
+            }
+        } catch (e: Exception) { }
+        return best
+    }
+
+    private fun panel(a: Activity): Boolean =
+        if (Build.VERSION.SDK_INT >= 29) go(a, Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)) else go(a, Intent(Settings.ACTION_WIFI_SETTINGS))
+
     /** Phone ka kaam ho to jawab (bolne wala text) deta hai, warna null -> Groq se baat. */
     fun handle(a: Activity, raw: String): String? {
-        val t = raw.lowercase().trim()
-        val offWords = listOf("off", "band", "bujha", "बंद")
-        if (t.contains("torch") || t.contains("flash") || t.contains("टॉर्च")) {
-            val on = offWords.none { t.contains(it) }
+        val t = norm(raw)
+        val has = { w: String -> t.split(" ").contains(w) }
+
+        if (has("torch")) {
+            val on = !has("band")
             return if (torch(a, on)) (if (on) "Torch on kar di" else "Torch band kar di") else "Torch nahi chal paayi"
         }
-        if (t.contains("youtube") || t.contains("gana") || t.contains("gaana") || t.startsWith("play ") || t.contains("song")) {
+        if (has("wifi") || has("internet")) {
+            return if (panel(a)) "Internet panel khol diya, wahan se WiFi ya data on off kar lo" else "Settings nahi khul paayi"
+        }
+        if (has("bluetooth")) {
+            return if (go(a, Intent(Settings.ACTION_BLUETOOTH_SETTINGS))) "Bluetooth settings khol di, wahan se on off kar lo" else "Bluetooth settings nahi khuli"
+        }
+        if (has("youtube") || has("song") || has("gana") || t.startsWith("play ")) {
             val q = clean(t)
             val i = if (q.isEmpty()) a.packageManager.getLaunchIntentForPackage("com.google.android.youtube")
             else Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(q)))
             return if (i != null && go(a, i)) (if (q.isEmpty()) "YouTube khol rahi hu" else "$q YouTube pe dhoondh rahi hu") else "YouTube nahi khul paaya"
         }
-        if (t.contains("call") || t.contains("phone laga")) {
+        if (has("call") || t.contains("phone laga")) {
             val d = t.filter { it.isDigit() }
-            go(a, Intent(Intent.ACTION_DIAL, Uri.parse("tel:$d")))
-            return if (d.length >= 5) "Dialer mein number daal diya, call dabao" else "Dialer khol diya, number ya naam chuno"
+            var num: String? = if (d.length >= 5) d else null
+            val name = clean(t)
+            if (num == null && name.isNotEmpty()) num = findNumber(a, name)
+            if (num == null) {
+                go(a, Intent(Intent.ACTION_DIAL))
+                return if (name.isNotEmpty()) "$name ka number nahi mila, dialer khol diya" else "Dialer khol diya, number ya naam chuno"
+            }
+            val ok = if (a.checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED)
+                go(a, Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(num))))
+            else go(a, Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(num))))
+            return if (ok) (if (name.isNotEmpty()) "$name ko call laga rahi hu" else "Call laga rahi hu") else "Call nahi lag paayi"
         }
-        if (t.contains("whatsapp")) {
+        if (has("whatsapp")) {
             val m = clean(t)
             val i = if (m.isEmpty()) a.packageManager.getLaunchIntentForPackage("com.whatsapp")
             else Intent(Intent.ACTION_SEND).setType("text/plain").setPackage("com.whatsapp").putExtra(Intent.EXTRA_TEXT, m)
             return if (i != null && go(a, i)) "WhatsApp khol rahi hu" else "WhatsApp nahi mila"
         }
-        if (t.contains("navigate") || t.contains("rasta") || t.contains("maps") || t.contains("directions") || t.contains("route")) {
+        if (has("navigate") || has("rasta") || has("directions") || has("route") || has("maps") || has("map")) {
             val p = clean(t)
-            val i = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(p))).setPackage("com.google.android.apps.maps")
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(p)))
+            i.setPackage("com.google.android.apps.maps")
             val ok = go(a, i) || go(a, Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(p))))
-            return if (ok) "Maps khol rahi hu" else "Maps nahi khul paaya"
+            return if (ok) (if (p.isEmpty()) "Maps khol rahi hu" else "$p ka rasta Maps mein laga rahi hu") else "Maps nahi khul paaya"
         }
-        if (t.contains("wifi") || t.contains("wi-fi")) { go(a, Intent(Settings.ACTION_WIFI_SETTINGS)); return "WiFi settings khol di" }
-        if (t.contains("bluetooth")) { go(a, Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); return "Bluetooth settings khol di" }
-        val openWords = listOf("kholo", "khol do", "open", "khol ", "start karo")
-        if (openWords.any { t.contains(it) } || t.endsWith("khol")) {
+        if (has("kholo") || has("open") || has("khol") || has("start")) {
             val n = clean(t)
+            if (n.isEmpty()) return "Kaunsa app kholu?"
             return if (openApp(a, n)) "$n khol rahi hu" else "Mujhe $n naam ka app nahi mila"
         }
         return null

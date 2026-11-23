@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private var rec: SpeechRecognizer? = null
     private var voiceOn = false
     private var busy = false
+    private var askedExtra = false
     private var screen = "splash"
     private val convo = ArrayList<Pair<String, String>>()
 
@@ -83,7 +84,7 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         if (code == 7) {
-            if (res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) listen()
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) listen()
             else showErr("Mic permission do, tabhi sun paungi")
         }
     }
@@ -210,8 +211,12 @@ class MainActivity : Activity() {
         voiceOn = true
         showErr("")
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 7)
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE), 7)
             return
+        }
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED && !askedExtra) {
+            askedExtra = true
+            requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE), 8)
         }
         listen()
     }
