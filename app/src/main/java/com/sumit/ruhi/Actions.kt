@@ -30,7 +30,12 @@ object Actions {
         "बन्द" to "band", "बंद" to "band", "ऑफ़" to "band", "ऑफ" to "band",
         "चालू" to "on", "ऑन" to "on", "जलाओ" to "on",
         "कॉल" to "call", "फ़ोन" to "call", "फोन" to "call",
-        "सर्च" to "search", "प्ले" to "play"
+        "सर्च" to "search", "प्ले" to "play",
+        "युटुब" to "youtube", "यूटूब" to "youtube", "यूटुब" to "youtube", "युट्यूब" to "youtube", "यू-ट्यूब" to "youtube",
+        "यूट्यूब" to "youtube", "यु ट्यूब" to "youtube", "यू टयूब" to "youtube", "युटूब" to "youtube",
+        "ओपन" to "open", "ओपेन" to "open", "औपन" to "open", "ऑपन" to "open", "ओपण" to "open",
+        "स्टार्ट" to "start", "चालू करो" to "open", "शुरू करो" to "open", "शुरू" to "start",
+        "वॉट्स एप" to "whatsapp", "वाट्स एप" to "whatsapp", "व्हाट्सेप" to "whatsapp", "वाट्सऐप" to "whatsapp"
     )
 
     private val appAlias = mapOf(
@@ -39,7 +44,7 @@ object Actions {
         "टेलीग्राम" to "telegram", "गूगल" to "google", "जीमेल" to "gmail", "फोनपे" to "phonepe",
         "पेटीएम" to "paytm", "कैलकुलेटर" to "calculator", "घड़ी" to "clock", "म्यूजिक" to "music",
         "प्ले स्टोर" to "play store", "स्पॉटिफाई" to "spotify", "मैसेज" to "messages", "संदेश" to "messages",
-        "फाइल" to "files", "कैलेंडर" to "calendar", "ट्विटर" to "x", "नेटफ्लिक्स" to "netflix"
+        "इंस्टा" to "instagram", "इन्स्टाग्राम" to "instagram", "इंस्टाग्रम" to "instagram", "फ़ेसबुक" to "facebook", "फेसबुक" to "facebook", "कॅमेरा" to "camera", "कैमेरा" to "camera", "फाइल" to "files", "कैलेंडर" to "calendar", "ट्विटर" to "x", "नेटफ्लिक्स" to "netflix"
     )
 
     private val stop = setOf(
@@ -49,7 +54,7 @@ object Actions {
         "call", "phone", "laga", "lagao", "to", "ke", "liye", "start", "app", "khol", "please", "yaar",
         "on", "band", "off", "se", "hai", "jana", "chalo", "le", "ek", "zara", "jara", "wala", "wali",
         "पर", "में", "का", "की", "को", "के", "लिए", "से", "तो", "हो", "है", "जाना", "चलो", "ले", "मुझे", "रुही",
-        "प्लीज", "यार", "ज़रा", "जरा", "एक", "वाला", "वाली", "करो", "कर", "दो", "ऐप", "एप", "ऐप्प", "app"
+        "करना", "करें", "कीजिए", "कीजिये", "करिए", "करियो", "कर दो", "open", "ओपन", "प्लीज", "यार", "ज़रा", "जरा", "एक", "वाला", "वाली", "करो", "कर", "दो", "ऐप", "एप", "ऐप्प", "app"
     )
 
     private fun norm(raw: String): String {
