@@ -92,6 +92,14 @@ class MainActivity : Activity() {
             need.add("android.permission.POST_NOTIFICATIONS")
         if (need.isNotEmpty()) { requestPermissions(need.toTypedArray(), 9); return }
         startWakeIfReady()
+        askOverlayOnce()
+    }
+
+    private fun askOverlayOnce() {
+        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this) || Store.overlayAsked(this)) return
+        Store.setOverlayAsked(this)
+        toast("Siri popup ke liye 'Display over other apps' allow karo")
+        try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))) } catch (e: Exception) { }
     }
 
     override fun onDestroy() {
@@ -107,7 +115,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
-        if (code == 9) { startWakeIfReady(); return }
+        if (code == 9) { startWakeIfReady(); askOverlayOnce(); return }
         if (code == 7) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) listen()
             else showErr("Mic permission do, tabhi sun paungi")
@@ -715,6 +723,14 @@ class MainActivity : Activity() {
             try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))) }
             catch (e: Exception) { toast("Settings nahi khuli") }
         })
+        c5.addView(btn("Siri popup test karo") {
+            if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) { toast("Pehle Display over other apps allow karo"); return@btn }
+            if (!Store.wake(this) || WakeService.instance == null) { toast("Pehle Wake word ON karo"); return@btn }
+            WakeCtl.begin()
+            main.postDelayed({ WakeCtl.update(WakeCtl.THINK, "Torch on karo") }, 1500)
+            main.postDelayed({ WakeCtl.update(WakeCtl.SPEAK, "Ho gaya Sumit. Popup ekdum Siri jaisa aa raha hai.") }, 2800)
+            main.postDelayed({ WakeCtl.end() }, 6000)
+        })
         c5.addView(btn("Battery: Ruhi ko unrestricted karo") {
             try { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
             catch (e: Exception) { toast("Settings nahi khuli") }
@@ -722,7 +738,7 @@ class MainActivity : Activity() {
         v.addView(c5)
 
         val c4 = card()
-        c4.addView(label("Ruhi AI v16 (Part 1) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
+        c4.addView(label("Ruhi AI v16 (Part 2) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
         v.addView(c4)
         setScreen(page("Settings", "settings", v, true), "settings")
     }

@@ -58,6 +58,8 @@ class WakeService : Service() {
     private lateinit var am: AudioManager
 
     private var running = false
+    private var gen = 0
+    private var overlay: SiriOverlay? = null
     private var mode = 0          // 0 = "Hello Ruhi" ka intezar, 1 = command sun rahi, 2 = soch/bol rahi
     private var afterSpeak = 0    // bolne ke baad: 1 = agla command sunna, 0 = wapas wake mode
     private var offline = true
@@ -74,6 +76,8 @@ class WakeService : Service() {
         super.onCreate()
         instance = this
         am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        overlay = SiriOverlay(this)
+        WakeCtl.listener = { st, tx -> overlay?.update(st, tx) }
     }
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int {
@@ -108,6 +112,9 @@ class WakeService : Service() {
         try { speaker?.shutdown() } catch (e: Exception) { }
         try { if (wl?.isHeld == true) wl?.release() } catch (e: Exception) { }
         WakeCtl.end()
+        overlay?.destroy()
+        overlay = null
+        WakeCtl.listener = null
         super.onDestroy()
     }
 
@@ -326,6 +333,7 @@ class WakeService : Service() {
         val sp = speaker
         if (sp == null) { backToWake(); return }
         val key = Store.key(this)
+        val myGen = ++gen
         sp.begin()
         Thread {
             val sb = StringBuilder()
@@ -333,7 +341,7 @@ class WakeService : Service() {
             try {
                 Brain.ask(key, Store.model(this), buildMsgs(), { m -> Store.setModel(this, m) }, { d ->
                     sb.append(d)
-                    sp.feed(d)
+                    if (gen == myGen) sp.feed(d)
                 })
             } catch (e: GroqErr) {
                 failed = true
@@ -346,7 +354,7 @@ class WakeService : Service() {
             }
             val out = sb.toString()
             main.post {
-                if (running) {
+                if (running && gen == myGen) {
                     if (failed) {
                         WakeCtl.error = out
                         sp.feed("Mujhe Groq se jawab nahi mila.")
@@ -361,6 +369,22 @@ class WakeService : Service() {
                 }
             }
         }.start()
+    }
+
+    /** Popup par tap: Ruhi chup ho jaye aur wapas "Hello Ruhi" mode mein aa jaye. */
+    fun dismiss() {
+        main.post {
+            if (!running) return@post
+            gen++
+            main.removeCallbacks(loopRun)
+            destroyRec()
+            speaker?.stop()
+            unmute()
+            mode = 0
+            afterSpeak = 0
+            WakeCtl.end()
+            retry(400)
+        }
     }
 
     /** App ki voice screen khuli/band hone par: mic ka takraav na ho. */

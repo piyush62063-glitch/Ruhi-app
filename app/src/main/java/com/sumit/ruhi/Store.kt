@@ -33,6 +33,9 @@ object Store {
     fun wake(c: Context): Boolean = sp(c).getBoolean("wake", true)
     fun setWake(c: Context, on: Boolean) { sp(c).edit().putBoolean("wake", on).apply() }
 
+    fun overlayAsked(c: Context): Boolean = sp(c).getBoolean("ovAsked", false)
+    fun setOverlayAsked(c: Context) { sp(c).edit().putBoolean("ovAsked", true).apply() }
+
     fun hist(c: Context): List<Pair<Boolean, String>> {
         val out = ArrayList<Pair<Boolean, String>>()
         try {
