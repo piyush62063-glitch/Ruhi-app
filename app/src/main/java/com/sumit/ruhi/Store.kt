@@ -30,6 +30,9 @@ object Store {
     fun pitch(c: Context): Float = sp(c).getFloat("pitch", 1.1f)
     fun setVoice(c: Context, speed: Float, pitch: Float) { sp(c).edit().putFloat("speed", speed).putFloat("pitch", pitch).apply() }
 
+    fun wake(c: Context): Boolean = sp(c).getBoolean("wake", true)
+    fun setWake(c: Context, on: Boolean) { sp(c).edit().putBoolean("wake", on).apply() }
+
     fun hist(c: Context): List<Pair<Boolean, String>> {
         val out = ArrayList<Pair<Boolean, String>>()
         try {

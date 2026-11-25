@@ -105,17 +105,17 @@ object Actions {
         return b.toString()
     }
 
-    private fun go(a: Activity, i: Intent): Boolean = try {
+    private fun go(a: Context, i: Intent): Boolean = try {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); a.startActivity(i); true
     } catch (e: Exception) { false }
 
-    private fun torch(a: Activity, on: Boolean): Boolean = try {
+    private fun torch(a: Context, on: Boolean): Boolean = try {
         val cm = a.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val id = cm.cameraIdList.first { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
         cm.setTorchMode(id, on); true
     } catch (e: Exception) { false }
 
-    private fun openApp(a: Activity, name0: String): Boolean {
+    private fun openApp(a: Context, name0: String): Boolean {
         val pm = a.packageManager
         var q = name0.trim().lowercase()
         if (q.isEmpty()) return false
@@ -136,7 +136,7 @@ object Actions {
         return go(a, li)
     }
 
-    private fun findNumber(a: Activity, name: String): String? {
+    private fun findNumber(a: Context, name: String): String? {
         if (a.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
         val q = name.lowercase().trim()
         if (q.isEmpty()) return null
@@ -166,11 +166,11 @@ object Actions {
         return best
     }
 
-    private fun panel(a: Activity): Boolean =
+    private fun panel(a: Context): Boolean =
         if (Build.VERSION.SDK_INT >= 29) go(a, Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)) else go(a, Intent(Settings.ACTION_WIFI_SETTINGS))
 
     /** Phone ka kaam ho to jawab (bolne wala text) deta hai, warna null -> Groq se baat. */
-    fun handle(a: Activity, raw: String): String? {
+    fun handle(a: Context, raw: String): String? {
         val t = norm(raw)
         val has = { w: String -> t.split(" ").contains(w) }
 

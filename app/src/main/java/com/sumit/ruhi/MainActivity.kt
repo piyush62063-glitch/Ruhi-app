@@ -10,7 +10,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
@@ -63,11 +66,32 @@ class MainActivity : Activity() {
         speaker.speed = Store.speed(this)
         speaker.pitch = Store.pitch(this)
         showSplash()
+        ensureWake()
     }
 
     override fun onPause() {
         super.onPause()
         if (screen == "voice") stopVoice()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startWakeIfReady()
+    }
+
+    private fun micOk(): Boolean = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun startWakeIfReady() {
+        if (micOk() && Store.wake(this)) WakeService.start(this)
+    }
+
+    private fun ensureWake() {
+        val need = ArrayList<String>()
+        if (!micOk()) need.add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+            need.add("android.permission.POST_NOTIFICATIONS")
+        if (need.isNotEmpty()) { requestPermissions(need.toTypedArray(), 9); return }
+        startWakeIfReady()
     }
 
     override fun onDestroy() {
@@ -83,6 +107,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
+        if (code == 9) { startWakeIfReady(); return }
         if (code == 7) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) listen()
             else showErr("Mic permission do, tabhi sun paungi")
@@ -209,6 +234,7 @@ class MainActivity : Activity() {
 
     private fun startVoice() {
         voiceOn = true
+        WakeCtl.paused = true
         showErr("")
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE), 7)
@@ -223,6 +249,7 @@ class MainActivity : Activity() {
 
     private fun stopVoice() {
         voiceOn = false
+        WakeCtl.paused = false
         try { rec?.cancel(); rec?.destroy() } catch (e: Exception) { }
         rec = null
         speaker.stop()
@@ -672,8 +699,30 @@ class MainActivity : Activity() {
         c3.addView(btn("Model list dekho") { showModels() })
         v.addView(c3)
 
+        val c5 = card()
+        c5.addView(label("Hello Ruhi (background)", 17f, Color.WHITE, true))
+        c5.addView(label("App band ho tab bhi 'Hello Ruhi' bolte hi Ruhi sunegi. Neeche ke teeno setting zaroor allow karo.", 13f, 0xFFB9B9DD.toInt(), false))
+        var tg: TextView? = null
+        val wakeText = { if (Store.wake(this)) "Wake word: ON (band karne ke liye tap)" else "Wake word: OFF (chalu karne ke liye tap)" }
+        tg = btn(wakeText()) {
+            val on = !Store.wake(this)
+            Store.setWake(this, on)
+            if (on) ensureWake() else WakeService.stop(this)
+            tg?.text = wakeText()
+        }
+        c5.addView(tg)
+        c5.addView(btn("Display over other apps: allow") {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))) }
+            catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        c5.addView(btn("Battery: Ruhi ko unrestricted karo") {
+            try { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        v.addView(c5)
+
         val c4 = card()
-        c4.addView(label("Ruhi AI v15 \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
+        c4.addView(label("Ruhi AI v16 (Part 1) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
         v.addView(c4)
         setScreen(page("Settings", "settings", v, true), "settings")
     }
