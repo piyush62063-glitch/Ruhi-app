@@ -7,6 +7,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.os.BatteryManager
+import android.provider.AlarmClock
 import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
@@ -35,7 +38,13 @@ object Actions {
         "यूट्यूब" to "youtube", "यु ट्यूब" to "youtube", "यू टयूब" to "youtube", "युटूब" to "youtube",
         "ओपन" to "open", "ओपेन" to "open", "औपन" to "open", "ऑपन" to "open", "ओपण" to "open",
         "स्टार्ट" to "start", "चालू करो" to "open", "शुरू करो" to "open", "शुरू" to "start",
-        "वॉट्स एप" to "whatsapp", "वाट्स एप" to "whatsapp", "व्हाट्सेप" to "whatsapp", "वाट्सऐप" to "whatsapp"
+        "वॉट्स एप" to "whatsapp", "वाट्स एप" to "whatsapp", "व्हाट्सेप" to "whatsapp", "वाट्सऐप" to "whatsapp",
+        "अलार्म" to "alarm", "अलार्म" to "alarm", "टाइमर" to "timer", "बैटरी" to "battery", "वॉल्यूम" to "volume",
+        "आवाज़" to "volume", "आवाज" to "volume", "बढ़ाओ" to "badhao", "बढ़ा दो" to "badhao", "घटाओ" to "ghatao",
+        "कम करो" to "kam", "म्यूट" to "mute", "कितने बजे" to "kitne baje", "बजे" to "baje", "सुबह" to "subah",
+        "शाम" to "shaam", "रात" to "raat", "दोपहर" to "dopahar", "टाइम" to "time", "समय" to "time",
+        "तारीख़" to "date", "तारीख" to "date", "मिनट" to "minute", "सेकंड" to "second", "सेकेंड" to "second",
+        "घंटे" to "hour", "घंटा" to "hour", "ढूंढो" to "search", "ढूँढो" to "search", "खोजो" to "search"
     )
 
     private val appAlias = mapOf(
@@ -179,6 +188,52 @@ object Actions {
         val t = norm(raw)
         val has = { w: String -> t.split(" ").contains(w) }
 
+        if (has("alarm")) {
+            val nums = Regex("\\d+").findAll(t).map { it.value.toIntOrNull() ?: 0 }.toList()
+            if (nums.isEmpty()) return if (go(a, Intent(AlarmClock.ACTION_SHOW_ALARMS))) "Alarm khol diye" else "Alarm nahi khule"
+            var h = nums[0]
+            val m = if (nums.size > 1) nums[1] else 0
+            if ((has("shaam") || has("raat") || has("pm") || has("dopahar")) && h in 1..11) h += 12
+            if (has("raat") && h == 12) h = 0
+            if (h > 23 || m > 59) return "Samay samajh nahi aaya, dobara bolo"
+            val ai = Intent(AlarmClock.ACTION_SET_ALARM)
+                .putExtra(AlarmClock.EXTRA_HOUR, h).putExtra(AlarmClock.EXTRA_MINUTES, m).putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            return if (go(a, ai)) "Alarm " + h + ":" + (if (m < 10) "0$m" else "$m") + " ka laga diya" else "Alarm nahi lag paaya"
+        }
+        if (has("timer")) {
+            val n = Regex("\\d+").find(t)?.value?.toIntOrNull()
+            if (n == null || n <= 0) return if (go(a, Intent(AlarmClock.ACTION_SET_TIMER))) "Timer khol diya" else "Timer nahi khula"
+            val secs = if (has("hour") || has("ghante") || has("ghanta")) n * 3600 else if (has("second") || has("sec")) n else n * 60
+            val ti = Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, secs).putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            return if (go(a, ti)) "Timer laga diya" else "Timer nahi lag paaya"
+        }
+        if (has("battery")) {
+            return try {
+                val bm = a.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                "Battery abhi " + bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) + " percent hai"
+            } catch (e: Exception) { "Battery ka pata nahi chala" }
+        }
+        if (has("volume")) {
+            val up = has("badhao") || has("badha") || has("up") || has("zyada") || has("increase") || has("full")
+            val down = has("kam") || has("ghatao") || has("down") || has("decrease") || has("low")
+            if (!up && !down && !has("mute")) return "Volume badhana hai ya kam karna?"
+            return try {
+                val au = a.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val dir = if (up) AudioManager.ADJUST_RAISE else if (down) AudioManager.ADJUST_LOWER else AudioManager.ADJUST_MUTE
+                val times = if (has("full")) 15 else if (has("mute")) 1 else 3
+                for (k in 0 until times) au.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, if (k == 0) AudioManager.FLAG_SHOW_UI else 0)
+                if (up) "Volume badha diya" else if (down) "Volume kam kar diya" else "Mute kar diya"
+            } catch (e: Exception) { "Volume change nahi ho paaya" }
+        }
+        if (has("time") || t.contains("kitne baje") || t.contains("kya baja")) {
+            val f = java.text.SimpleDateFormat("h:mm a", java.util.Locale.ENGLISH)
+            return "Abhi " + f.format(java.util.Date()) + " ho rahe hain"
+        }
+        if (has("date") || has("tarikh") || t.contains("aaj kya din") || t.contains("aaj kaun sa din")) {
+            val f = java.text.SimpleDateFormat("EEEE, d MMMM yyyy", java.util.Locale.ENGLISH)
+            return "Aaj " + f.format(java.util.Date()) + " hai"
+        }
+
         if (has("torch")) {
             val on = !has("band")
             return if (torch(a, on)) (if (on) "Torch on kar di" else "Torch band kar di") else "Torch nahi chal paayi"
@@ -210,6 +265,22 @@ object Actions {
             return if (ok) (if (name.isNotEmpty()) "$name ko call laga rahi hu" else "Call laga rahi hu") else "Call nahi lag paayi"
         }
         if (has("whatsapp")) {
+            val skipW = setOf("whatsapp", "message", "msg", "मैसेज")
+            val toks = t.split(" ").filter { it.isNotBlank() && it !in skipW }.toMutableList()
+            val endW = setOf("bhejo", "bhej", "likho", "karo", "kar", "do", "par", "pe", "mein", "me", "ruhi", "भेजो", "भेज", "लिखो", "करो", "कर", "दो", "पर", "पे", "में", "रुही")
+            while (toks.isNotEmpty() && toks.last() in endW) toks.removeAt(toks.size - 1)
+            val ki = toks.indexOfFirst { it == "ko" || it == "को" }
+            if (ki > 0 && ki < toks.size - 1) {
+                val nm = toks.subList(0, ki).filter { it !in stop }.joinToString(" ")
+                val body = toks.subList(ki + 1, toks.size).joinToString(" ")
+                val found = if (nm.isNotEmpty()) findNumber(a, nm) else null
+                if (found != null) {
+                    var dg = found.filter { it.isDigit() }
+                    if (dg.length == 10) dg = "91" + dg
+                    val wi = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/" + dg + "?text=" + Uri.encode(body))).setPackage("com.whatsapp")
+                    return if (go(a, wi)) "$nm ko message likh diya, bas send dabana" else "WhatsApp nahi khul paaya"
+                }
+            }
             val m = clean(t)
             val i = if (m.isEmpty()) a.packageManager.getLaunchIntentForPackage("com.whatsapp")
             else Intent(Intent.ACTION_SEND).setType("text/plain").setPackage("com.whatsapp").putExtra(Intent.EXTRA_TEXT, m)
@@ -221,6 +292,11 @@ object Actions {
             i.setPackage("com.google.android.apps.maps")
             val ok = go(a, i) || go(a, Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(p))))
             return if (ok) (if (p.isEmpty()) "Maps khol rahi hu" else "$p ka rasta Maps mein laga rahi hu") else "Maps nahi khul paaya"
+        }
+        if (has("search") || has("dhundo") || has("khojo") || has("dhoondo")) {
+            val q = clean(t).split(" ").filter { it.isNotBlank() && it != "google" && it != "dhundo" && it != "khojo" && it != "dhoondo" }.joinToString(" ")
+            if (q.isEmpty()) return "Kya search karu?"
+            return if (go(a, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))))) "$q Google pe dhoondh rahi hu" else "Search nahi khul paayi"
         }
         if (has("kholo") || has("open") || has("khol") || has("start")) {
             val n = clean(t)

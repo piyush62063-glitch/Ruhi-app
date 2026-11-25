@@ -33,6 +33,11 @@ object Store {
     fun wake(c: Context): Boolean = sp(c).getBoolean("wake", true)
     fun setWake(c: Context, on: Boolean) { sp(c).edit().putBoolean("wake", on).apply() }
 
+    fun guard(c: Context): Boolean = sp(c).getBoolean("guard", true)
+    fun setGuard(c: Context, on: Boolean) { sp(c).edit().putBoolean("guard", on).apply() }
+    fun held(c: Context): Boolean = sp(c).getBoolean("held", false)
+    fun setHeld(c: Context, on: Boolean) { sp(c).edit().putBoolean("held", on).apply() }
+
     fun overlayAsked(c: Context): Boolean = sp(c).getBoolean("ovAsked", false)
     fun setOverlayAsked(c: Context) { sp(c).edit().putBoolean("ovAsked", true).apply() }
 

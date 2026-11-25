@@ -65,6 +65,7 @@ class MainActivity : Activity() {
         speaker = Speaker(this, { onSpeakIdle() }, { if (screen == "voice") setState(3) })
         speaker.speed = Store.speed(this)
         speaker.pitch = Store.pitch(this)
+        WakeService.restoreAudio(this)
         showSplash()
         ensureWake()
     }
@@ -203,6 +204,14 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- VOICE / ORB
     private fun openVoice() {
+        // Siri jaisa popup: orb screen ki jagah neeche popup aata hai aur Ruhi seedha sunti hai
+        val ovOk = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)
+        val svc = WakeService.instance
+        if (ovOk && svc != null && micOk() && Store.wake(this)) {
+            svc.manualWake()
+            return
+        }
+        if (!ovOk) toast("Siri popup ke liye Settings mein 'Display over other apps' allow karo")
         showVoice()
         startVoice()
     }
@@ -719,6 +728,15 @@ class MainActivity : Activity() {
             tg?.text = wakeText()
         }
         c5.addView(tg)
+        var gt: TextView? = null
+        val guardText = { if (Store.guard(this)) "Beep roko: ON (band karne ke liye tap)" else "Beep roko: OFF (chalu karne ke liye tap)" }
+        gt = btn(guardText()) {
+            val on = !Store.guard(this)
+            Store.setGuard(this, on)
+            if (!on) { WakeService.instance?.releaseHold(); WakeService.restoreAudio(this) }
+            gt?.text = guardText()
+        }
+        c5.addView(gt)
         c5.addView(btn("Display over other apps: allow") {
             try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))) }
             catch (e: Exception) { toast("Settings nahi khuli") }

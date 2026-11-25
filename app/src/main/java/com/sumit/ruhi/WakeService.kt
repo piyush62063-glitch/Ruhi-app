@@ -41,6 +41,16 @@ class WakeService : Service() {
             try { c.stopService(Intent(c, WakeService::class.java)) } catch (e: Exception) { }
         }
 
+        /** Agar app crash ya band hone se media volume mute reh gaya ho to wapas khol deta hai. */
+        fun restoreAudio(c: Context) {
+            try {
+                if (instance != null || !Store.held(c)) return
+                val a = c.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                a.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+                Store.setHeld(c, false)
+            } catch (e: Exception) { }
+        }
+
         private const val GREET = "hello|helo|hallo|hullo|halo|hey|hi|hai|ok|okay|हेलो|हैलो|हेल्लो|हलो|हाय|हाई|हे|ओके|अरे|सुनो"
         private const val NAME = "ruhi|rui|roohi|ruhee|ruhhi|rohi|ruchi|ruhy|रुही|रूही|रुहि|रूहि|रोही|रुचि|रुई"
         private val WAKE = Regex("(?:^| )(?:$GREET) ?(?:$NAME)(?: |$)")
@@ -65,6 +75,8 @@ class WakeService : Service() {
     private var offline = true
     private var fails = 0
     private var muted = false
+    private var musicHeld = false
+    private var earlyWake = false
     private val convo = ArrayList<Pair<String, String>>()
 
     private val loopRun = Runnable { listen() }
@@ -74,8 +86,9 @@ class WakeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
         am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        restoreAudio(this)
+        instance = this
         overlay = SiriOverlay(this)
         WakeCtl.listener = { st, tx -> overlay?.update(st, tx) }
     }
@@ -109,6 +122,7 @@ class WakeService : Service() {
         main.removeCallbacks(unmuteRun)
         destroyRec()
         unmute()
+        holdMusic(false)
         try { speaker?.shutdown() } catch (e: Exception) { }
         try { if (wl?.isHeld == true) wl?.release() } catch (e: Exception) { }
         WakeCtl.end()
@@ -150,10 +164,10 @@ class WakeService : Service() {
     private val beepStreams = intArrayOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM, AudioManager.STREAM_MUSIC)
 
     private fun mute() {
-        if (muted) return
+        if (muted || !Store.guard(this)) return
         muted = true
         for (s in beepStreams) {
-            if (s == AudioManager.STREAM_MUSIC && am.isMusicActive) continue
+            if (s == AudioManager.STREAM_MUSIC && (musicHeld || am.isMusicActive)) continue
             try { am.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, 0) } catch (e: Exception) { }
         }
     }
@@ -162,8 +176,21 @@ class WakeService : Service() {
         if (!muted) return
         muted = false
         for (s in beepStreams) {
+            if (s == AudioManager.STREAM_MUSIC && musicHeld) continue
             try { am.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, 0) } catch (e: Exception) { }
         }
+    }
+
+    /**
+     * Sunte waqt media stream ko lagataar mute rakhta hai (beep isi par bajti hai), taaki bar bar
+     * mute/unmute ke beech beep na nikle. Bolte waqt ya gaana chalte waqt chhod deta hai.
+     */
+    private fun holdMusic(want: Boolean) {
+        val on = want && Store.guard(this) && !am.isMusicActive
+        if (on == musicHeld) return
+        musicHeld = on
+        try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, 0) } catch (e: Exception) { }
+        Store.setHeld(this, on)
     }
 
     private fun scheduleUnmute(ms: Long) {
@@ -182,6 +209,25 @@ class WakeService : Service() {
         rec = null
     }
 
+    private val recListener = object : RecognitionListener {
+        override fun onReadyForSpeech(p: Bundle?) { scheduleUnmute(550) }
+        override fun onBeginningOfSpeech() { }
+        override fun onRmsChanged(v: Float) { WakeCtl.level = ((v + 2f) / 12f).coerceIn(0f, 1f) }
+        override fun onBufferReceived(b: ByteArray?) { }
+        override fun onEndOfSpeech() { mute(); scheduleUnmute(900) }
+        override fun onEvent(t: Int, p: Bundle?) { }
+        override fun onPartialResults(p: Bundle?) {
+            val l: List<String> = p?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: ArrayList<String>()
+            handlePartial(l)
+        }
+        override fun onError(code: Int) { handleError(code) }
+        override fun onResults(res: Bundle?) {
+            fails = 0
+            val l: List<String> = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: ArrayList<String>()
+            handleResults(l)
+        }
+    }
+
     private fun listen() {
         if (!running || WakeCtl.paused || mode == 2) return
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -189,53 +235,61 @@ class WakeService : Service() {
             retry(15000)
             return
         }
-        destroyRec()
-        val r = try { SpeechRecognizer.createSpeechRecognizer(this) } catch (e: Exception) { null }
-        if (r == null) { retry(2500); return }
-        rec = r
-        r.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(p: Bundle?) { scheduleUnmute(550) }
-            override fun onBeginningOfSpeech() { }
-            override fun onRmsChanged(v: Float) { WakeCtl.level = ((v + 2f) / 12f).coerceIn(0f, 1f) }
-            override fun onBufferReceived(b: ByteArray?) { }
-            override fun onEndOfSpeech() { mute(); scheduleUnmute(900) }
-            override fun onEvent(t: Int, p: Bundle?) { }
-            override fun onPartialResults(p: Bundle?) { }
-            override fun onError(code: Int) { handleError(code) }
-            override fun onResults(res: Bundle?) {
-                fails = 0
-                val l: List<String> = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: ArrayList<String>()
-                handleResults(l)
-            }
-        })
+        holdMusic(true)
+        var r: SpeechRecognizer? = rec
+        if (r == null) {
+            r = try { SpeechRecognizer.createSpeechRecognizer(this) } catch (e: Exception) { null }
+            if (r == null) { retry(2500); return }
+            r.setRecognitionListener(recListener)
+            rec = r
+        }
+        val rr: SpeechRecognizer = r ?: return
         val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
         i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
         if (offline && mode == 0) i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         mute()
         scheduleUnmute(2500)
-        try { r.startListening(i) } catch (e: Exception) { scheduleUnmute(300); retry(1500) }
+        try { rr.startListening(i) } catch (e: Exception) { destroyRec(); scheduleUnmute(300); retry(1500) }
+    }
+
+    /** "Hello Ruhi" poora bolne se pehle hi (partial text se) popup dikha deta hai, aur command ko live dikhata hai. */
+    private fun handlePartial(list: List<String>) {
+        if (!running || WakeCtl.paused || list.isEmpty()) return
+        if (mode == 0) {
+            if (!earlyWake && findWake(list) != null) {
+                earlyWake = true
+                WakeCtl.begin()
+            }
+        } else if (mode == 1) {
+            val t = list[0].trim()
+            if (t.isNotBlank()) WakeCtl.update(WakeCtl.LISTEN, t)
+        }
     }
 
     private fun handleError(code: Int) {
         if (!running || WakeCtl.paused) return
+        if (earlyWake) {
+            earlyWake = false
+            if (mode == 0) WakeCtl.end()
+        }
         mute()
         scheduleUnmute(700)
         when (code) {
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                if (mode == 1) backToWake() else retry(200)
+                if (mode == 1) backToWake() else retry(120)
             }
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> retry(1200)
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> { destroyRec(); retry(1200) }
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
                 WakeCtl.error = "Mic permission do"
                 running = false
                 stopSelf()
             }
-            12, 13 -> { offline = false; retry(300) }
-            else -> { fails++; retry(minOf(8000L, 700L * fails)) }
+            12, 13 -> { destroyRec(); offline = false; retry(300) }
+            else -> { destroyRec(); fails++; retry(minOf(8000L, 700L * fails)) }
         }
     }
 
@@ -245,7 +299,11 @@ class WakeService : Service() {
         scheduleUnmute(500)
         if (mode == 0) {
             val cmd = findWake(list)
-            if (cmd == null) { retry(150); return }
+            if (cmd == null) {
+                if (earlyWake) { earlyWake = false; WakeCtl.end() }
+                retry(100)
+                return
+            }
             onWake(cmd)
         } else if (mode == 1) {
             val t = if (list.isNotEmpty()) list[0].trim() else ""
@@ -270,14 +328,31 @@ class WakeService : Service() {
 
     // ---------------------------------------------------------------- session
     private fun onWake(cmd: String) {
+        earlyWake = false
         WakeCtl.begin()
         if (cmd.isNotBlank()) { process(cmd); return }
-        mode = 2
+        // Siri ki tarah seedha sunna shuru: pehle bolne mein time nahi lagta
+        mode = 1
         afterSpeak = 1
-        unmute()
-        val sp = speaker
-        if (sp == null) { onSpeakIdle(); return }
-        sp.begin(); sp.feed("Haan, bolo."); sp.finish()
+        WakeCtl.update(WakeCtl.LISTEN, "")
+        retry(80)
+    }
+
+    /** Settings se "Beep roko" band hone par media volume turant wapas. */
+    fun releaseHold() {
+        main.post { holdMusic(false); unmute() }
+    }
+
+    /** App ke andar orb/mic tap karne par: Siri popup khol kar seedha sunna shuru. */
+    fun manualWake() {
+        main.post {
+            if (!running || WakeCtl.paused) return@post
+            gen++
+            main.removeCallbacks(loopRun)
+            speaker?.stop()
+            destroyRec()
+            onWake("")
+        }
     }
 
     private fun backToWake() {
@@ -323,6 +398,7 @@ class WakeService : Service() {
         mode = 2
         WakeCtl.update(WakeCtl.THINK, text)
         unmute()
+        holdMusic(false)
         Store.addHist(this, true, text)
         convo.add(Pair("user", text))
         if (convo.size > 24) repeat(12) { convo.removeAt(0) }
@@ -380,6 +456,8 @@ class WakeService : Service() {
             destroyRec()
             speaker?.stop()
             unmute()
+            holdMusic(false)
+            earlyWake = false
             mode = 0
             afterSpeak = 0
             WakeCtl.end()
@@ -396,6 +474,8 @@ class WakeService : Service() {
                     destroyRec()
                     speaker?.stop()
                     unmute()
+                    holdMusic(false)
+                    earlyWake = false
                     mode = 0
                     afterSpeak = 0
                     WakeCtl.end()
