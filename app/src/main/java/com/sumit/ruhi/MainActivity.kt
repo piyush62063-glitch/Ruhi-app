@@ -33,6 +33,7 @@ import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 class MainActivity : Activity() {
     private val BG = 0xFF02010A.toInt()
@@ -107,6 +108,32 @@ class MainActivity : Activity() {
         super.onDestroy()
         try { rec?.destroy() } catch (e: Exception) { }
         speaker.shutdown()
+    }
+
+    private fun restartWake() {
+        WakeService.stop(this)
+        main.postDelayed({ startWakeIfReady() }, 500)
+    }
+
+    private fun engineStatus(): String =
+        if (PorcupineEngine.ready(this)) {
+            if (PorcupineEngine.lastError.isNotBlank()) "Engine: Porcupine error: " + PorcupineEngine.lastError + " (purana tarika chal raha hai)"
+            else "Engine: Porcupine taiyar (bina beep ke)"
+        } else "Engine: normal tarika (Access Key aur .ppn file baaki)"
+
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        if (req == 31 && res == RESULT_OK) {
+            val u = data?.data ?: return
+            try {
+                contentResolver.openInputStream(u)?.use { ins ->
+                    PorcupineEngine.keywordFile(this).outputStream().use { ins.copyTo(it) }
+                }
+                toast(".ppn file save ho gayi")
+                restartWake()
+                if (screen == "settings") showSettings()
+            } catch (e: Exception) { toast("File copy nahi ho paayi") }
+        }
     }
 
     override fun onBackPressed() {
@@ -343,6 +370,12 @@ class MainActivity : Activity() {
         if (speak) setState(2)
         Store.addHist(this, true, text)
         convo.add(Pair("user", text))
+        val cf: String? = try { Tasks.confirm(this, text) } catch (e: Exception) { null }
+        if (cf != null) { finishReply(cf, speak); return }
+        val tl: String? = try { Tasks.handle(this, text, false) } catch (e: Exception) { null }
+        if (tl != null) { finishReply(tl, speak); return }
+        val asyncOk = try { Tasks.async(this, text, false) { out -> main.post { finishReply(out, speak) } } } catch (e: Exception) { false }
+        if (asyncOk) return
         val local: String? = try { Actions.handle(this, text) } catch (e: Exception) { null }
         if (local != null) {
             finishReply(local, speak)
@@ -755,8 +788,78 @@ class MainActivity : Activity() {
         })
         v.addView(c5)
 
+        val c6 = card()
+        c6.addView(label("Locked phone mode", 17f, Color.WHITE, true))
+        c6.addView(label("Phone locked ho to Ruhi pehle password sunegi (abhi: assemble). Sahi password ke baad 2 minute tak kaam karegi, 3 galat try par 1 minute lock. App kholne wale kaam ke liye unlock karna padega.", 13f, 0xFFB9B9DD.toInt(), false))
+        var lg: TextView? = null
+        val lgText = { if (Store.gate(this)) "Password gate: ON (band karne ke liye tap)" else "Password gate: OFF (chalu karne ke liye tap)" }
+        lg = btn(lgText()) {
+            Store.setGate(this, !Store.gate(this))
+            lg?.text = lgText()
+        }
+        c6.addView(lg)
+        val pe = EditText(this)
+        pe.hint = "Naya password (1 se 3 shabd)"
+        pe.setHintTextColor(0xFF6F6A99.toInt())
+        pe.setTextColor(Color.WHITE)
+        pe.setSingleLine(true)
+        c6.addView(pe)
+        c6.addView(btn("Password badlo") {
+            if (LockGate.setPass(this, pe.text.toString())) { pe.setText(""); toast("Password badal gaya") }
+            else toast("Password bahut chhota hai")
+        })
+        c6.addView(btn("Brightness permission: allow") {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + packageName))) }
+            catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        c6.addView(btn("Do Not Disturb permission: allow") {
+            try { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+            catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        c6.addView(btn("SMS permission: allow") {
+            requestPermissions(arrayOf(Manifest.permission.SEND_SMS), 21)
+        })
+        c6.addView(btn("Reminder ke liye exact alarm: allow") {
+            try {
+                if (Build.VERSION.SDK_INT >= 31) startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + packageName)))
+                else toast("Is phone par zaroorat nahi")
+            } catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        v.addView(c6)
+
+        val c7 = card()
+        c7.addView(label("Hello Ruhi engine (Picovoice)", 17f, Color.WHITE, true))
+        c7.addView(label("console.picovoice.ai se free Access Key lo, 'Hello Ruhi' keyword train karke Android ki .ppn file download karo. Isse wake word bina beep ke, phone ke andar hi pehchana jata hai.", 13f, 0xFFB9B9DD.toInt(), false))
+        val pk = EditText(this)
+        pk.setText(Store.pvKey(this))
+        pk.hint = "Picovoice Access Key"
+        pk.setHintTextColor(0xFF6F6A99.toInt())
+        pk.setTextColor(Color.WHITE)
+        pk.setSingleLine(true)
+        pk.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        c7.addView(pk)
+        val pst = label(engineStatus(), 13f, 0xFFFF9BD6.toInt(), false)
+        c7.addView(btn("Access Key save karo") {
+            Store.setPvKey(this, pk.text.toString())
+            restartWake()
+            pst.text = engineStatus()
+            toast("Key save ho gayi")
+        })
+        c7.addView(btn(".ppn file chuno") {
+            val pi = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            pi.addCategory(Intent.CATEGORY_OPENABLE)
+            pi.type = "*/*"
+            try { startActivityForResult(pi, 31) } catch (e: Exception) { toast("File picker nahi khula") }
+        })
+        c7.addView(btn("Engine dobara chalu karo") {
+            restartWake()
+            main.postDelayed({ pst.text = engineStatus() }, 1500)
+        })
+        c7.addView(pst)
+        v.addView(c7)
+
         val c4 = card()
-        c4.addView(label("Ruhi AI v16 (Part 2) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
+        c4.addView(label("Ruhi AI v16 (Part 4A) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
         v.addView(c4)
         setScreen(page("Settings", "settings", v, true), "settings")
     }

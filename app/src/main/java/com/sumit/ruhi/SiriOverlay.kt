@@ -42,6 +42,13 @@ class SiriOverlay(c: Context) {
     private val hideRun = Runnable { realHide() }
 
     fun update(state: Int, text: String) {
+        // Lock screen par normal overlay nahi dikhta, wahan transparent activity use hoti hai
+        if (LockGate.isLocked(ctx) || LockPopupActivity.inst != null) {
+            main.removeCallbacks(hideRun)
+            if (shown) realHide()
+            LockPopupActivity.push(ctx, state, text)
+            return
+        }
         if (state == WakeCtl.IDLE) {
             main.removeCallbacks(hideRun)
             main.postDelayed(hideRun, 350)

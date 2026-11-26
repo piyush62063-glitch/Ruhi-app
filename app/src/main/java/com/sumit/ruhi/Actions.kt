@@ -66,13 +66,13 @@ object Actions {
         "करना", "करें", "कीजिए", "कीजिये", "करिए", "करियो", "कर दो", "open", "ओपन", "प्लीज", "यार", "ज़रा", "जरा", "एक", "वाला", "वाली", "करो", "कर", "दो", "ऐप", "एप", "ऐप्प", "app"
     )
 
-    private fun norm(raw: String): String {
+    internal fun norm(raw: String): String {
         var t = " " + raw.lowercase().trim() + " "
         for ((d, r) in dict) t = t.replace(d, " $r ")
         return t.replace(Regex("\\s+"), " ").trim()
     }
 
-    private fun clean(t: String) = t.split(" ").filter { it.isNotBlank() && it !in stop }.joinToString(" ")
+    internal fun clean(t: String) = t.split(" ").filter { it.isNotBlank() && it !in stop }.joinToString(" ")
 
     // ---------- Devanagari -> Roman (app / contact naam match karne ke liye)
     private val cons = mapOf(
@@ -111,7 +111,7 @@ object Actions {
         return o.toString()
     }
 
-    private fun skel(s: String): String {
+    internal fun skel(s: String): String {
         val r = translit(s.lowercase()).replace("w", "v").replace("c", "k").replace("q", "k")
             .filter { it.isLetter() && it !in "aeiouyh" }
         val b = StringBuilder()
@@ -150,7 +150,7 @@ object Actions {
         return go(a, li)
     }
 
-    private fun findNumber(a: Context, name: String): String? {
+    internal fun findNumber(a: Context, name: String): String? {
         if (a.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
         val q = name.lowercase().trim()
         if (q.isEmpty()) return null
@@ -182,6 +182,18 @@ object Actions {
 
     private fun panel(a: Context): Boolean =
         if (Build.VERSION.SDK_INT >= 29) go(a, Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)) else go(a, Intent(Settings.ACTION_WIFI_SETTINGS))
+
+
+    /** Phone locked ho to jo kaam screen/app kholte hain (unlock chahiye) unhe pehchanta hai. */
+    fun needsUnlock(raw: String): Boolean {
+        val t = norm(raw)
+        val w = t.split(" ")
+        val has = { x: String -> w.contains(x) }
+        return has("youtube") || has("song") || has("gana") || t.startsWith("play ") || has("whatsapp") ||
+            has("navigate") || has("rasta") || has("directions") || has("route") || has("maps") || has("map") ||
+            has("search") || has("dhundo") || has("khojo") || has("dhoondo") || has("kholo") || has("open") ||
+            has("khol") || has("start") || has("wifi") || has("internet") || has("bluetooth")
+    }
 
     /** Phone ka kaam ho to jawab (bolne wala text) deta hai, warna null -> Groq se baat. */
     fun handle(a: Context, raw: String): String? {

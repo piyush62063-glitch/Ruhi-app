@@ -77,6 +77,9 @@ class WakeService : Service() {
     private var muted = false
     private var musicHeld = false
     private var earlyWake = false
+    private var porc: PorcupineEngine? = null
+    private var awaitPass = false
+    private var pendingCmd: String? = null
     private val convo = ArrayList<Pair<String, String>>()
 
     private val loopRun = Runnable { listen() }
@@ -90,6 +93,7 @@ class WakeService : Service() {
         restoreAudio(this)
         instance = this
         overlay = SiriOverlay(this)
+        porc = PorcupineEngine(this) { main.post { onPorcHit() } }
         WakeCtl.listener = { st, tx -> overlay?.update(st, tx) }
     }
 
@@ -121,6 +125,8 @@ class WakeService : Service() {
         main.removeCallbacks(loopRun)
         main.removeCallbacks(unmuteRun)
         destroyRec()
+        porc?.release()
+        porc = null
         unmute()
         holdMusic(false)
         try { speaker?.shutdown() } catch (e: Exception) { }
@@ -230,6 +236,11 @@ class WakeService : Service() {
 
     private fun listen() {
         if (!running || WakeCtl.paused || mode == 2) return
+        if (mode == 0 && porc?.start() == true) {
+            holdMusic(false)
+            unmute()
+            return
+        }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             WakeCtl.error = "Phone mein speech recognition nahi mila"
             retry(15000)
@@ -326,9 +337,20 @@ class WakeService : Service() {
         return null
     }
 
+    /** Porcupine ne "Hello Ruhi" pakda (bina beep ke). */
+    private fun onPorcHit() {
+        if (!running || WakeCtl.paused || mode != 0) return
+        porc?.stop()
+        gen++
+        main.removeCallbacks(loopRun)
+        destroyRec()
+        onWake("")
+    }
+
     // ---------------------------------------------------------------- session
     private fun onWake(cmd: String) {
         earlyWake = false
+        porc?.stop()
         WakeCtl.begin()
         if (cmd.isNotBlank()) { process(cmd); return }
         // Siri ki tarah seedha sunna shuru: pehle bolne mein time nahi lagta
@@ -351,6 +373,7 @@ class WakeService : Service() {
             main.removeCallbacks(loopRun)
             speaker?.stop()
             destroyRec()
+            porc?.stop()
             onWake("")
         }
     }
@@ -358,6 +381,8 @@ class WakeService : Service() {
     private fun backToWake() {
         mode = 0
         afterSpeak = 0
+        awaitPass = false
+        pendingCmd = null
         WakeCtl.end()
         retry(250)
     }
@@ -394,16 +419,67 @@ class WakeService : Service() {
         sp.begin(); sp.feed("$t."); sp.finish()
     }
 
-    private fun process(text: String) {
+    private fun process(text0: String) {
         mode = 2
-        WakeCtl.update(WakeCtl.THINK, text)
         unmute()
         holdMusic(false)
+        var text = text0
+        val locked = LockGate.isLocked(this)
+
+        // Locked phone: pehle bola hua password (assemble) chahiye
+        if (LockGate.needsAuth(this)) {
+            WakeCtl.update(WakeCtl.THINK, "\u2022\u2022\u2022\u2022")
+            if (LockGate.lockLeft() > 0) {
+                reply("Abhi lock hai, " + LockGate.lockLeft() + " second baad try karo", 0)
+                return
+            }
+            val rem = LockGate.consume(this, text)
+            if (rem == null) {
+                if (awaitPass) {
+                    if (LockGate.fail() >= 3) {
+                        awaitPass = false
+                        pendingCmd = null
+                        reply("Teen baar galat password. Ek minute ke liye lock kar rahi hu", 0)
+                    } else reply("Password galat hai, ek baar aur bolo", 1)
+                } else {
+                    pendingCmd = text
+                    awaitPass = true
+                    reply("Phone locked hai. Password bolo", 1)
+                }
+                return
+            }
+            LockGate.grant()
+            awaitPass = false
+            text = if (rem.isNotBlank()) rem else (pendingCmd ?: "")
+            pendingCmd = null
+            if (text.isBlank()) {
+                reply("Password sahi hai. Bolo, kya karna hai?", 1)
+                return
+            }
+        }
+
+        WakeCtl.update(WakeCtl.THINK, text)
         Store.addHist(this, true, text)
         convo.add(Pair("user", text))
         if (convo.size > 24) repeat(12) { convo.removeAt(0) }
 
-        val local: String? = try { Actions.handle(this, text) } catch (e: Exception) { null }
+        val cf: String? = try { Tasks.confirm(this, text) } catch (e: Exception) { null }
+        if (cf != null) { reply(cf, 0); return }
+
+        var local: String? = try { Tasks.handle(this, text, locked) } catch (e: Exception) { null }
+        if (local != null) { reply(local, if (Tasks.followUp) 1 else 0); return }
+
+        val g0 = ++gen
+        val started = try {
+            Tasks.async(this, text, locked) { out -> main.post { if (running && gen == g0) reply(out, 0) } }
+        } catch (e: Exception) { false }
+        if (started) return
+
+        if (locked && Actions.needsUnlock(text)) {
+            reply("Ye kaam ke liye phone unlock karna padega. Unlock karke phir bolo.", 0)
+            return
+        }
+        local = try { Actions.handle(this, text) } catch (e: Exception) { null }
         if (local != null) { reply(local, 0); return }
 
         val sp = speaker
@@ -460,6 +536,8 @@ class WakeService : Service() {
             earlyWake = false
             mode = 0
             afterSpeak = 0
+            awaitPass = false
+            pendingCmd = null
             WakeCtl.end()
             retry(400)
         }
@@ -472,6 +550,7 @@ class WakeService : Service() {
                 if (WakeCtl.paused) {
                     main.removeCallbacks(loopRun)
                     destroyRec()
+                    porc?.stop()
                     speaker?.stop()
                     unmute()
                     holdMusic(false)

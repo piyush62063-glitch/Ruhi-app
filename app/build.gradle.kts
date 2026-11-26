@@ -9,8 +9,8 @@ android {
         applicationId = "com.sumit.ruhi"
         minSdk = 24
         targetSdk = 34
-        versionCode = 18
-        versionName = "16.0-part3"
+        versionCode = 19
+        versionName = "16.0-part4a"
     }
     signingConfigs {
         create("ruhi") {
@@ -29,4 +29,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+}
+dependencies {
+    implementation("ai.picovoice:porcupine-android:3.0.1")
 }

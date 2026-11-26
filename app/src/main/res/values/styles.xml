@@ -4,4 +4,12 @@
         <item name="android:statusBarColor">#02010A</item>
         <item name="android:navigationBarColor">#02010A</item>
     </style>
+    <style name="RuhiPopup" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

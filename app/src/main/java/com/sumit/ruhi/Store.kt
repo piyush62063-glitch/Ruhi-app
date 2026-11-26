@@ -66,4 +66,71 @@ object Store {
     }
 
     fun clearHist(c: Context) { sp(c).edit().putString("hist", "[]").apply() }
+
+    // ---------------------------------------------------------------- Part 4A
+    fun gate(c: Context): Boolean = sp(c).getBoolean("gate", true)
+    fun setGate(c: Context, on: Boolean) { sp(c).edit().putBoolean("gate", on).apply() }
+    fun passHash(c: Context): String = sp(c).getString("passHash", "") ?: ""
+    fun passN(c: Context): Int = sp(c).getInt("passN", 1)
+    fun setPass(c: Context, hash: String, n: Int) { sp(c).edit().putString("passHash", hash).putInt("passN", n).apply() }
+
+    fun pvKey(c: Context): String = sp(c).getString("pvKey", "") ?: ""
+    fun setPvKey(c: Context, k: String) { sp(c).edit().putString("pvKey", k.trim()).apply() }
+
+    fun city(c: Context): String = sp(c).getString("city", "") ?: ""
+    fun setCity(c: Context, s: String) { sp(c).edit().putString("city", s.trim()).apply() }
+
+    fun notes(c: Context): List<String> {
+        val out = ArrayList<String>()
+        try {
+            val a = JSONArray(sp(c).getString("notes", "[]"))
+            for (i in 0 until a.length()) out.add(a.getString(i))
+        } catch (e: Exception) { }
+        return out
+    }
+
+    fun addNote(c: Context, t: String) {
+        try {
+            val a = JSONArray(sp(c).getString("notes", "[]"))
+            a.put(t)
+            val n = JSONArray()
+            for (i in maxOf(0, a.length() - 50) until a.length()) n.put(a.get(i))
+            sp(c).edit().putString("notes", n.toString()).apply()
+        } catch (e: Exception) { }
+    }
+
+    fun clearNotes(c: Context) { sp(c).edit().putString("notes", "[]").apply() }
+
+    fun reminders(c: Context): List<Triple<Int, Long, String>> {
+        val out = ArrayList<Triple<Int, Long, String>>()
+        try {
+            val a = JSONArray(sp(c).getString("rem", "[]"))
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                out.add(Triple(o.getInt("id"), o.getLong("at"), o.getString("t")))
+            }
+        } catch (e: Exception) { }
+        return out
+    }
+
+    private fun putReminders(c: Context, l: List<Triple<Int, Long, String>>) {
+        val a = JSONArray()
+        for (r in l) a.put(JSONObject().put("id", r.first).put("at", r.second).put("t", r.third))
+        sp(c).edit().putString("rem", a.toString()).apply()
+    }
+
+    fun nextReminderId(c: Context): Int {
+        val n = sp(c).getInt("remId", 100) + 1
+        sp(c).edit().putInt("remId", n).apply()
+        return n
+    }
+
+    fun addReminder(c: Context, id: Int, at: Long, t: String) {
+        val l = reminders(c).toMutableList()
+        l.add(Triple(id, at, t))
+        putReminders(c, l)
+    }
+
+    fun removeReminder(c: Context, id: Int) { putReminders(c, reminders(c).filter { it.first != id }) }
+    fun clearReminders(c: Context) { putReminders(c, emptyList()) }
 }
