@@ -426,7 +426,7 @@ class WakeService : Service() {
         var text = text0
         val locked = LockGate.isLocked(this)
 
-        // Locked phone: pehle bola hua password (assemble) chahiye
+        // Locked phone: pehle bola hua password (sumit) chahiye
         if (LockGate.needsAuth(this)) {
             WakeCtl.update(WakeCtl.THINK, "\u2022\u2022\u2022\u2022")
             if (LockGate.lockLeft() > 0) {

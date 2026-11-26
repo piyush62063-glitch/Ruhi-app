@@ -790,7 +790,7 @@ class MainActivity : Activity() {
 
         val c6 = card()
         c6.addView(label("Locked phone mode", 17f, Color.WHITE, true))
-        c6.addView(label("Phone locked ho to Ruhi pehle password sunegi (abhi: assemble). Sahi password ke baad 2 minute tak kaam karegi, 3 galat try par 1 minute lock. App kholne wale kaam ke liye unlock karna padega.", 13f, 0xFFB9B9DD.toInt(), false))
+        c6.addView(label("Phone locked ho to Ruhi pehle password sunegi (abhi: sumit). Sahi password ke baad 2 minute tak kaam karegi, 3 galat try par 1 minute lock. App kholne wale kaam ke liye unlock karna padega.", 13f, 0xFFB9B9DD.toInt(), false))
         var lg: TextView? = null
         val lgText = { if (Store.gate(this)) "Password gate: ON (band karne ke liye tap)" else "Password gate: OFF (chalu karne ke liye tap)" }
         lg = btn(lgText()) {

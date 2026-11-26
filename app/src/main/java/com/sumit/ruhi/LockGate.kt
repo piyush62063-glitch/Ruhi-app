@@ -6,12 +6,12 @@ import android.os.SystemClock
 import java.security.MessageDigest
 
 /**
- * Locked phone ka bola hua password (default: assemble).
+ * Locked phone ka bola hua password (default: sumit).
  * Sahi password ke baad 2 minute tak Ruhi kaam karti hai. 3 galat try par 1 minute lock.
  * Password sirf hash ke roop mein save hota hai, aur Hindi/English dono tarah bolne par match hota hai.
  */
 object LockGate {
-    private const val DEFAULT_PASS = "assemble"
+    private const val DEFAULT_PASS = "sumit"
     private const val WINDOW_MS = 2 * 60 * 1000L
     private const val LOCKOUT_MS = 60 * 1000L
 
@@ -54,7 +54,7 @@ object LockGate {
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
     /** Awaaz se aaye shabd ka dhaancha: Hindi ya English, spelling ka fark chal jata hai. */
-    fun passKey(s: String): String = Actions.skel(s).replace("n", "").replace("m", "")
+    fun passKey(s: String): String = Actions.skel(s).replace("nb", "mb").replace("np", "mp")
 
     private fun curHash(c: Context): String {
         val h = Store.passHash(c)
