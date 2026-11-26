@@ -290,7 +290,8 @@ object Actions {
                     var dg = found.filter { it.isDigit() }
                     if (dg.length == 10) dg = "91" + dg
                     val wi = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/" + dg + "?text=" + Uri.encode(body))).setPackage("com.whatsapp")
-                    return if (go(a, wi)) "$nm ko message likh diya, bas send dabana" else "WhatsApp nahi khul paaya"
+                    if (!go(a, wi)) return "WhatsApp nahi khul paaya"
+                    return if (RuhiAccess.armSend()) "$nm ko message bhej rahi hu" else "$nm ko message likh diya, bas send dabana. Auto send ke liye Settings mein Accessibility allow karo"
                 }
             }
             val m = clean(t)

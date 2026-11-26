@@ -9,8 +9,8 @@ android {
         applicationId = "com.sumit.ruhi"
         minSdk = 24
         targetSdk = 34
-        versionCode = 19
-        versionName = "16.0-part4a"
+        versionCode = 20
+        versionName = "16.0-part4b"
     }
     signingConfigs {
         create("ruhi") {

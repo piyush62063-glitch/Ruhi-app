@@ -133,4 +133,8 @@ object Store {
 
     fun removeReminder(c: Context, id: Int) { putReminders(c, reminders(c).filter { it.first != id }) }
     fun clearReminders(c: Context) { putReminders(c, emptyList()) }
+
+    // ---------------------------------------------------------------- Part 4B
+    fun handoff(c: Context): Boolean = sp(c).getBoolean("handoff", true)
+    fun setHandoff(c: Context, on: Boolean) { sp(c).edit().putBoolean("handoff", on).apply() }
 }

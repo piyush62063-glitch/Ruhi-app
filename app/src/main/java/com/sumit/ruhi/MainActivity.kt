@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private var chatList: LinearLayout? = null
     private var chatScroll: ScrollView? = null
     private var live: TextView? = null
+    private var accTv: TextView? = null
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -79,7 +80,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         startWakeIfReady()
+        if (screen == "settings") accTv?.text = accessStatus()
     }
+
+    private fun accessStatus(): String =
+        "Accessibility: " + (if (RuhiAccess.instance != null) "ON" else "OFF") +
+            "  \u2022  Notification access: " + (if (RuhiNotif.enabled(this)) "ON" else "OFF")
 
     private fun micOk(): Boolean = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
@@ -153,7 +159,7 @@ class MainActivity : Activity() {
     private fun setScreen(v: View, name: String) {
         screen = name
         orb = null; gl = null; gr = null; gb = null; errTv = null
-        chatList = null; chatScroll = null; live = null
+        chatList = null; chatScroll = null; live = null; accTv = null
         root.removeAllViews()
         root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
@@ -370,12 +376,14 @@ class MainActivity : Activity() {
         if (speak) setState(2)
         Store.addHist(this, true, text)
         convo.add(Pair("user", text))
-        val cf: String? = try { Tasks.confirm(this, text) } catch (e: Exception) { null }
+        val cf: String? = try { Tasks.confirm(this, text) ?: Control.confirm(this, text) } catch (e: Exception) { null }
         if (cf != null) { finishReply(cf, speak); return }
         val tl: String? = try { Tasks.handle(this, text, false) } catch (e: Exception) { null }
         if (tl != null) { finishReply(tl, speak); return }
         val asyncOk = try { Tasks.async(this, text, false) { out -> main.post { finishReply(out, speak) } } } catch (e: Exception) { false }
         if (asyncOk) return
+        val ctl = try { Control.run(this, text) { out -> main.post { finishReply(out, speak) } } } catch (e: Exception) { false }
+        if (ctl) return
         val local: String? = try { Actions.handle(this, text) } catch (e: Exception) { null }
         if (local != null) {
             finishReply(local, speak)
@@ -637,7 +645,11 @@ class MainActivity : Activity() {
             "Maps", "\"navigate Delhi\"",
             "Torch", "\"torch on karo\" / \"torch band karo\"",
             "Settings", "\"wifi\" ya \"bluetooth\" bolo",
-            "Koi bhi app", "\"Instagram kholo\", \"Camera kholo\""
+            "Koi bhi app", "\"Instagram kholo\", \"Camera kholo\"",
+            "Phone control", "\"screenshot lo\", \"back\", \"home\", \"scroll neeche\", \"screen padho\", \"tap settings\", \"phone lock karo\"",
+            "WiFi / Bluetooth", "\"wifi on karo\", \"bluetooth band karo\"",
+            "Notifications", "\"notification padho\", \"WhatsApp ke message padho\", \"reply karo main aa raha hu\"",
+            "Locked phone", "\"Hello Ruhi\", password bolo, phir kaam. Unlock wala kaam ho to unlock karte hi Ruhi khud kar degi"
         )
         var i = 0
         while (i < lines.size) {
@@ -858,9 +870,40 @@ class MainActivity : Activity() {
         c7.addView(pst)
         v.addView(c7)
 
+        val c8 = card()
+        c8.addView(label("Phone control aur notifications (Part 4B)", 17f, Color.WHITE, true))
+        c8.addView(label("Accessibility se Ruhi back, home, scroll, screenshot, tap, screen padhna, WhatsApp auto-send aur WiFi/Bluetooth on-off kar sakti hai. Notification access se naye notification padhna aur reply karna hota hai. Android 13+ par pehle App info mein teen dot dabakar 'Allow restricted settings' karna padta hai.", 13f, 0xFFB9B9DD.toInt(), false))
+        val st = label(accessStatus(), 13f, 0xFFFF9BD6.toInt(), false)
+        c8.addView(btn("Accessibility service: allow") {
+            try { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        c8.addView(btn("Notification access: allow") {
+            try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        c8.addView(btn("App info kholo (restricted settings ke liye)") {
+            try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName))) }
+            catch (e: Exception) { toast("Settings nahi khuli") }
+        })
+        var hg: TextView? = null
+        val hgText = { if (Store.handoff(this)) "Unlock handoff: ON (band karne ke liye tap)" else "Unlock handoff: OFF (chalu karne ke liye tap)" }
+        hg = btn(hgText()) {
+            Store.setHandoff(this, !Store.handoff(this))
+            hg?.text = hgText()
+        }
+        c8.addView(hg)
+        c8.addView(btn("Test: notification padho") {
+            Control.run(this, "notification padho") { out -> main.post { toast(out.take(80)); speaker.begin(); speaker.feed("$out."); speaker.finish() } }
+        })
+        c8.addView(btn("Test: screenshot lo") {
+            Control.run(this, "screenshot lo") { out -> main.post { toast(out); speaker.begin(); speaker.feed("$out."); speaker.finish() } }
+        })
+        c8.addView(st)
+        v.addView(c8)
+
         val c4 = card()
-        c4.addView(label("Ruhi AI v16 (Part 4A) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
+        c4.addView(label("Ruhi AI v16 (Part 4B) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
         v.addView(c4)
         setScreen(page("Settings", "settings", v, true), "settings")
+        accTv = st
     }
 }

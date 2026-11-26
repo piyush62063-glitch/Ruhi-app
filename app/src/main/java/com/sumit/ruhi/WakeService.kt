@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -83,6 +85,11 @@ class WakeService : Service() {
     private val convo = ArrayList<Pair<String, String>>()
 
     private val loopRun = Runnable { listen() }
+
+    // Part 4B: phone unlock hote hi rukha hua command chalane ke liye
+    private val userPresent = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) { runHandoff() }
+    }
     private val unmuteRun = Runnable { unmute() }
 
     override fun onBind(i: Intent?): IBinder? = null
@@ -95,6 +102,11 @@ class WakeService : Service() {
         overlay = SiriOverlay(this)
         porc = PorcupineEngine(this) { main.post { onPorcHit() } }
         WakeCtl.listener = { st, tx -> overlay?.update(st, tx) }
+        try {
+            val f = IntentFilter(Intent.ACTION_USER_PRESENT)
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(userPresent, f, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(userPresent, f)
+        } catch (e: Exception) { }
     }
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int {
@@ -124,6 +136,7 @@ class WakeService : Service() {
         instance = null
         main.removeCallbacks(loopRun)
         main.removeCallbacks(unmuteRun)
+        try { unregisterReceiver(userPresent) } catch (e: Exception) { }
         destroyRec()
         porc?.release()
         porc = null
@@ -463,7 +476,7 @@ class WakeService : Service() {
         convo.add(Pair("user", text))
         if (convo.size > 24) repeat(12) { convo.removeAt(0) }
 
-        val cf: String? = try { Tasks.confirm(this, text) } catch (e: Exception) { null }
+        val cf: String? = try { Tasks.confirm(this, text) ?: Control.confirm(this, text) } catch (e: Exception) { null }
         if (cf != null) { reply(cf, 0); return }
 
         var local: String? = try { Tasks.handle(this, text, locked) } catch (e: Exception) { null }
@@ -475,10 +488,14 @@ class WakeService : Service() {
         } catch (e: Exception) { false }
         if (started) return
 
-        if (locked && Actions.needsUnlock(text)) {
-            reply("Ye kaam ke liye phone unlock karna padega. Unlock karke phir bolo.", 0)
+        if (locked && (Actions.needsUnlock(text) || Control.needsUnlock(text))) {
+            handoffUnlock(text)
             return
         }
+        val ctl = try {
+            Control.run(this, text) { out -> main.post { if (running && gen == g0) reply(out, if (Control.followUp) 1 else 0) } }
+        } catch (e: Exception) { false }
+        if (ctl) return
         local = try { Actions.handle(this, text) } catch (e: Exception) { null }
         if (local != null) { reply(local, 0); return }
 
@@ -521,6 +538,37 @@ class WakeService : Service() {
                 }
             }
         }.start()
+    }
+
+    // ---------------------------------------------------------------- Part 4B: unlock handoff
+    private fun handoffUnlock(text: String) {
+        if (Build.VERSION.SDK_INT < 26 || !Store.handoff(this)) {
+            reply("Ye kaam ke liye phone unlock karna padega. Unlock karke phir bolo.", 0)
+            return
+        }
+        Handoff.set(text)
+        reply("Ye kaam ke liye phone unlock karna padega. Unlock kar do, phir main khud kar dungi.", 0)
+        UnlockActivity.launch(this)
+    }
+
+    /** Phone unlock hone ke baad rukha hua command chalata hai (pehle se koi command nahi to kuch nahi karta). */
+    fun runHandoff(tries: Int = 0) {
+        main.post {
+            if (!running || WakeCtl.paused || !Handoff.pending()) return@post
+            if (LockGate.isLocked(this) && tries < 8) {
+                main.postDelayed({ runHandoff(tries + 1) }, 400)
+                return@post
+            }
+            val c = Handoff.take() ?: return@post
+            gen++
+            main.removeCallbacks(loopRun)
+            destroyRec()
+            porc?.stop()
+            speaker?.stop()
+            earlyWake = false
+            WakeCtl.begin()
+            process(c)
+        }
     }
 
     /** Popup par tap: Ruhi chup ho jaye aur wapas "Hello Ruhi" mode mein aa jaye. */
