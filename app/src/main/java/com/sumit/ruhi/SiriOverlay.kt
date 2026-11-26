@@ -113,14 +113,14 @@ class SiriView(c: Context) : View(c) {
     private val glowP = Paint(Paint.ANTI_ALIAS_FLAG)
     private val orbP = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shineP = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val cardP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE6161228.toInt() }
+    private val cardP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE61A0508.toInt() }
     private val edgeP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x40FFFFFF }
     private val labelP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xCCFFFFFF.toInt(); textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD; textSize = dp(13f)
     }
     private val textP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = dp(16f) }
 
-    private val cols = intArrayOf(0xFF38BDF8.toInt(), 0xFF8B5CF6.toInt(), 0xFFEC4899.toInt(), 0xFFFB923C.toInt())
+    private val cols = intArrayOf(0xFFFF5A5F.toInt(), 0xFFD01428.toInt(), 0xFFFF3B6B.toInt(), 0xFFFF7A3C.toInt())
     private val blobs = ArrayList<Pair<Paint, RadialGradient>>()
     private var sweep: SweepGradient? = null
     private val mx = Matrix()
@@ -164,9 +164,9 @@ class SiriView(c: Context) : View(c) {
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        scrim.shader = LinearGradient(0f, h * 0.30f, 0f, h.toFloat(), 0x00000010, 0xE6000010.toInt(), Shader.TileMode.CLAMP)
+        scrim.shader = LinearGradient(0f, h * 0.30f, 0f, h.toFloat(), 0x00100003, 0xE6100003.toInt(), Shader.TileMode.CLAMP)
         sweep = SweepGradient(w / 2f, h - dp(78f),
-            intArrayOf(0xFF38BDF8.toInt(), 0xFF6366F1.toInt(), 0xFFA855F7.toInt(), 0xFFEC4899.toInt(), 0xFFFB923C.toInt(), 0xFF38BDF8.toInt()), null)
+            intArrayOf(0xFFFF5A5F.toInt(), 0xFF9E0F1F.toInt(), 0xFFFF2D3D.toInt(), 0xFFFF3B6B.toInt(), 0xFFFF7A3C.toInt(), 0xFFFF5A5F.toInt()), null)
         orbP.shader = sweep
     }
 
@@ -207,7 +207,7 @@ class SiriView(c: Context) : View(c) {
         val cy = h - dp(78f)
         val r = dp(30f) * (1f + 0.18f * sm)
         for (k in 3 downTo 1) {
-            glowP.color = 0xFFA855F7.toInt()
+            glowP.color = 0xFFFF2D3D.toInt()
             glowP.alpha = (46 / k + 10 * sm).toInt()
             cv.drawCircle(cx, cy, r + dp(8f) * k, glowP)
         }

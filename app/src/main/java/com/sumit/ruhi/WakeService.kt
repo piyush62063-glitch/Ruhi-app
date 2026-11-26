@@ -79,7 +79,7 @@ class WakeService : Service() {
     private var muted = false
     private var musicHeld = false
     private var earlyWake = false
-    private var porc: PorcupineEngine? = null
+    private var porc: WakeEngine? = null
     private var awaitPass = false
     private var pendingCmd: String? = null
     private val convo = ArrayList<Pair<String, String>>()
@@ -100,7 +100,7 @@ class WakeService : Service() {
         restoreAudio(this)
         instance = this
         overlay = SiriOverlay(this)
-        porc = PorcupineEngine(this) { main.post { onPorcHit() } }
+        porc = WakeEngine(this, { main.post { onPorcHit() } }, { main.post { onEngineChange() } })
         WakeCtl.listener = { st, tx -> overlay?.update(st, tx) }
         try {
             val f = IntentFilter(Intent.ACTION_USER_PRESENT)
@@ -350,7 +350,14 @@ class WakeService : Service() {
         return null
     }
 
-    /** Porcupine ne "Hello Ruhi" pakda (bina beep ke). */
+    /** Engine taiyar ho gaya (ya fail hua): purani sunai band karke seedha engine par aao. */
+    private fun onEngineChange() {
+        if (!running || WakeCtl.paused || mode != 0) return
+        destroyRec()
+        retry(30)
+    }
+
+    /** Vosk ne "Hello Ruhi" pakda (bina beep ke). */
     private fun onPorcHit() {
         if (!running || WakeCtl.paused || mode != 0) return
         porc?.stop()

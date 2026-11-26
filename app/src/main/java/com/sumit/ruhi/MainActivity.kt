@@ -36,7 +36,7 @@ import org.json.JSONObject
 import java.io.File
 
 class MainActivity : Activity() {
-    private val BG = 0xFF02010A.toInt()
+    private val BG = 0xFF050102.toInt()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var root: FrameLayout
     private lateinit var speaker: Speaker
@@ -122,25 +122,10 @@ class MainActivity : Activity() {
     }
 
     private fun engineStatus(): String =
-        if (PorcupineEngine.ready(this)) {
-            if (PorcupineEngine.lastError.isNotBlank()) "Engine: Porcupine error: " + PorcupineEngine.lastError + " (purana tarika chal raha hai)"
-            else "Engine: Porcupine taiyar (bina beep ke)"
-        } else "Engine: normal tarika (Access Key aur .ppn file baaki)"
-
-    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
-        super.onActivityResult(req, res, data)
-        if (req == 31 && res == RESULT_OK) {
-            val u = data?.data ?: return
-            try {
-                contentResolver.openInputStream(u)?.use { ins ->
-                    PorcupineEngine.keywordFile(this).outputStream().use { ins.copyTo(it) }
-                }
-                toast(".ppn file save ho gayi")
-                restartWake()
-                if (screen == "settings") showSettings()
-            } catch (e: Exception) { toast("File copy nahi ho paayi") }
-        }
-    }
+        if (!WakeEngine.ready(this)) "Engine: normal tarika (is APK mein Vosk model nahi mila)"
+        else if (WakeEngine.lastError.isNotBlank()) "Engine: Vosk error: " + WakeEngine.lastError + " (purana tarika chal raha hai)"
+        else if (WakeEngine.modelReady) "Engine: Vosk taiyar (bina beep, bina key)"
+        else "Engine: Vosk model load ho raha hai (pehli baar 5-10 second)..."
 
     override fun onBackPressed() {
         if (screen == "home" || screen == "splash") super.onBackPressed()
@@ -167,7 +152,7 @@ class MainActivity : Activity() {
     private fun pressDrawable(): StateListDrawable {
         val sl = StateListDrawable()
         val g = GradientDrawable()
-        g.setColor(0x33B58CFF)
+        g.setColor(0x33FF3B4A)
         g.cornerRadius = 40f
         sl.addState(intArrayOf(android.R.attr.state_pressed), g)
         sl.addState(intArrayOf(), ColorDrawable(0))
@@ -190,17 +175,15 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- SPLASH
     private fun showSplash() {
-        val p = FracLayout(this, 941f, 1672f)
-        p.add(image(R.drawable.splash_bg), 0f, 0f, 941f, 1672f)
+        val p = FracLayout(this, 876f, 1683f)
+        p.add(image(R.drawable.splash_bg), 0f, 0f, 876f, 1683f)
         val pv = ProgressView(this)
-        p.add(pv, 130f, 1105f, 815f, 1213f)
+        p.add(pv, 270f, 1170f, 630f, 1400f)
         setScreen(p, "splash")
         val a = ValueAnimator.ofFloat(0f, 1f)
         a.duration = 2800
         a.addUpdateListener {
-            val v = it.animatedValue as Float
-            pv.p = v
-            pv.label = if (v < 0.4f) "Initializing Ruhi AI..." else if (v < 0.8f) "Loading voice & brain..." else "Almost ready..."
+            pv.p = it.animatedValue as Float
             pv.invalidate()
         }
         a.addListener(object : android.animation.AnimatorListenerAdapter() {
@@ -211,26 +194,35 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- HOME
     private fun showHome() {
-        val p = FracLayout(this, 841f, 1808f)
-        p.add(image(R.drawable.home_bg), 0f, 0f, 841f, 1808f)
-        hit(p, 523f, 28f, 602f, 106f) { toast("Pro active hai") }
-        hit(p, 625f, 28f, 700f, 106f) { toast("Koi nayi notification nahi") }
-        hit(p, 725f, 23f, 812f, 110f) { showSettings() }
-        hit(p, 285f, 470f, 555f, 745f) { openVoice() }
-        hit(p, 45f, 728f, 797f, 923f) { openVoice() }
-        hit(p, 28f, 973f, 268f, 1203f) { showChat() }
-        hit(p, 293f, 973f, 548f, 1203f) { toast("Characters jaldi aa rahe hain") }
-        hit(p, 573f, 973f, 813f, 1203f) { openVoice() }
-        hit(p, 28f, 1233f, 268f, 1443f) { showTools() }
-        hit(p, 293f, 1233f, 548f, 1443f) { showModels() }
-        hit(p, 573f, 1233f, 813f, 1443f) { showHistory() }
-        hit(p, 28f, 1478f, 812f, 1585f) { showTools() }
-        hit(p, 205f, 1623f, 325f, 1763f) { showChat() }
-        hit(p, 340f, 1590f, 500f, 1750f) { openVoice() }
-        hit(p, 515f, 1623f, 635f, 1763f) { showHistory() }
-        hit(p, 670f, 1623f, 790f, 1763f) { showSettings() }
+        val p = FracLayout(this, 852f, 1776f)
+        p.add(image(R.drawable.home_bg), 0f, 0f, 852f, 1776f)
+        hit(p, 35f, 22f, 122f, 110f) { showTools() }
+        hit(p, 730f, 22f, 818f, 110f) { showSettings() }
+        hit(p, 250f, 235f, 610f, 570f) { openVoice() }
+        hit(p, 35f, 880f, 275f, 1075f) { showChat() }
+        hit(p, 307f, 880f, 547f, 1075f) { openVoice() }
+        hit(p, 579f, 880f, 819f, 1075f) { toast("Image Analysis jaldi aa raha hai") }
+        hit(p, 35f, 1105f, 275f, 1280f) { toast("Chat mein bolo: 'google pe ... search karo'"); showChat() }
+        hit(p, 307f, 1105f, 547f, 1280f) { showTools() }
+        hit(p, 579f, 1105f, 819f, 1280f) { showSettings() }
+        hit(p, 135f, 1333f, 718f, 1437f) { toast("Ruhi AI Premium: sab features abhi free hain") }
+        hit(p, 52f, 1478f, 145f, 1596f) { openVoice() }
+        hit(p, 150f, 1478f, 825f, 1596f) { showChat() }
+        hit(p, 216f, 1630f, 425f, 1776f) { showHistory() }
+        hit(p, 425f, 1630f, 637f, 1776f) { toast("Favorite jaldi aa raha hai") }
+        hit(p, 637f, 1630f, 852f, 1776f) { showAbout() }
         setScreen(p, "home")
         if (Store.key(this).isBlank()) toast("Pehle Settings mein Groq key daalo")
+    }
+
+    private fun showAbout() {
+        try {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Ruhi AI")
+                .setMessage("Your Smart Assistant\nVersion 17 (Vosk wake word)\nBy Sumit Kashyap")
+                .setPositiveButton("OK", null)
+                .show()
+        } catch (e: Exception) { toast("Ruhi AI by Sumit Kashyap") }
     }
 
     private fun toast(s: String) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show() }
@@ -261,7 +253,7 @@ class MainActivity : Activity() {
         p.add(sv, 395f, oy + 510f, 860f, oy + 745f)
         hit(p, 300f, oy + 180f, 960f, oy + 500f) { if (voiceOn) stopVoice() else startVoice() }
         val e = FitText(this, 0.30f)
-        e.setTextColor(0xFFFF9BD6.toInt())
+        e.setTextColor(0xFFFF8A8A.toInt())
         p.add(e, 80f, 1580f, 1174f, 1660f)
         val mn = PillButton(this, "Minimize")
         mn.setOnClickListener { stopVoice(); showHome() }
@@ -442,8 +434,8 @@ class MainActivity : Activity() {
         c.setPadding(dp(16), dp(14), dp(16), dp(14))
         val g = GradientDrawable()
         g.cornerRadius = dp(20).toFloat()
-        g.setColor(0xCC120E33.toInt())
-        g.setStroke(dp(1), 0xFF4B3FD6.toInt())
+        g.setColor(0xCC1E070B.toInt())
+        g.setStroke(dp(1), 0xFFB30F1F.toInt())
         c.background = g
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.setMargins(dp(14), dp(8), dp(14), dp(8))
@@ -466,7 +458,7 @@ class MainActivity : Activity() {
         v.setPadding(dp(18), dp(12), dp(18), dp(12))
         val g = GradientDrawable()
         g.orientation = GradientDrawable.Orientation.LEFT_RIGHT
-        g.setColors(intArrayOf(0xFF7C4DFF.toInt(), 0xFFC13DFF.toInt()))
+        g.setColors(intArrayOf(0xFFE0112B.toInt(), 0xFFFF3B4A.toInt()))
         g.cornerRadius = dp(24).toFloat()
         v.background = g
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -483,14 +475,14 @@ class MainActivity : Activity() {
         row.setPadding(dp(6), dp(6), dp(6), dp(6))
         val g = GradientDrawable()
         g.cornerRadius = dp(32).toFloat()
-        g.setColor(0xFF0A0722.toInt())
-        g.setStroke(dp(2), 0xFF6D4BFF.toInt())
+        g.setColor(0xFF0A0204.toInt())
+        g.setStroke(dp(2), 0xFFD01428.toInt())
         row.background = g
         fun item(emoji: String, name: String, key: String, f: () -> Unit) {
             val c = LinearLayout(this)
             c.orientation = LinearLayout.VERTICAL
             c.gravity = Gravity.CENTER
-            val col = if (cur == key) 0xFFD9C8FF.toInt() else 0xFF8E88B8.toInt()
+            val col = if (cur == key) 0xFFFFD6D9.toInt() else 0xFFB88A90.toInt()
             c.addView(label(emoji, 18f, col, false))
             c.addView(label(name, 11f, col, cur == key))
             c.setOnClickListener { f() }
@@ -516,7 +508,7 @@ class MainActivity : Activity() {
         col.orientation = LinearLayout.VERTICAL
         val bg = GradientDrawable()
         bg.orientation = GradientDrawable.Orientation.TOP_BOTTOM
-        bg.setColors(intArrayOf(0xFF02010A.toInt(), 0xFF0E0A2A.toInt(), 0xFF1A0F3F.toInt()))
+        bg.setColors(intArrayOf(0xFF050102.toInt(), 0xFF160407.toInt(), 0xFF2A0509.toInt()))
         col.background = bg
         val t = label(title, 24f, Color.WHITE, true)
         t.setPadding(dp(20), dp(16), dp(20), dp(6))
@@ -548,10 +540,10 @@ class MainActivity : Activity() {
         g.cornerRadius = dp(18).toFloat()
         if (user) {
             g.orientation = GradientDrawable.Orientation.LEFT_RIGHT
-            g.setColors(intArrayOf(0xFF7C4DFF.toInt(), 0xFFB455F7.toInt()))
+            g.setColors(intArrayOf(0xFFE0112B.toInt(), 0xFFFF2D3D.toInt()))
         } else {
-            g.setColor(0xDD15123A.toInt())
-            g.setStroke(dp(1), 0xFF3F37B8.toInt())
+            g.setColor(0xDD2A0A10.toInt())
+            g.setStroke(dp(1), 0xFF8E0F1C.toInt())
         }
         tv.background = g
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -580,18 +572,18 @@ class MainActivity : Activity() {
         row.setPadding(dp(12), dp(4), dp(12), dp(4))
         val et = EditText(this)
         et.hint = "Ask me anything..."
-        et.setHintTextColor(0xFF8E88B8.toInt())
+        et.setHintTextColor(0xFFB88A90.toInt())
         et.setTextColor(Color.WHITE)
         et.setPadding(dp(18), dp(10), dp(18), dp(10))
         val eg = GradientDrawable()
         eg.cornerRadius = dp(26).toFloat()
-        eg.setColor(0xFF0B0828.toInt())
-        eg.setStroke(dp(1), 0xFF4B3FD6.toInt())
+        eg.setColor(0xFF0E0305.toInt())
+        eg.setStroke(dp(1), 0xFFB30F1F.toInt())
         et.background = eg
         et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         et.maxLines = 3
         row.addView(et, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val send = label("\u27A4", 26f, 0xFFB455F7.toInt(), true)
+        val send = label("\u27A4", 26f, 0xFFFF2D3D.toInt(), true)
         send.setPadding(dp(14), dp(6), dp(6), dp(6))
         send.setOnClickListener {
             val t = et.text.toString().trim()
@@ -621,7 +613,7 @@ class MainActivity : Activity() {
         val h = Store.hist(this)
         if (h.isEmpty()) {
             val c = card()
-            c.addView(label("Abhi koi chat nahi hai.", 15f, 0xFFB9B9DD.toInt(), false))
+            c.addView(label("Abhi koi chat nahi hai.", 15f, 0xFFE8C8CC.toInt(), false))
             v.addView(c)
         }
         for (m in h) v.addView(bubble(m.second, m.first))
@@ -655,7 +647,7 @@ class MainActivity : Activity() {
         while (i < lines.size) {
             val c = card()
             c.addView(label(lines[i], 16f, Color.WHITE, true))
-            c.addView(label(lines[i + 1], 14f, 0xFFB9B9DD.toInt(), false))
+            c.addView(label(lines[i + 1], 14f, 0xFFE8C8CC.toInt(), false))
             v.addView(c)
             i += 2
         }
@@ -668,10 +660,10 @@ class MainActivity : Activity() {
         val v = vbox()
         val c0 = card()
         val cur = Store.model(this)
-        c0.addView(label("Abhi ka model", 13f, 0xFFB9B9DD.toInt(), false))
+        c0.addView(label("Abhi ka model", 13f, 0xFFE8C8CC.toInt(), false))
         c0.addView(label(if (cur.isBlank()) "Auto (404 aaye to khud badal leti hai)" else cur, 16f, Color.WHITE, true))
         v.addView(c0)
-        val status = label("Groq se list la rahi hu...", 14f, 0xFFB9B9DD.toInt(), false)
+        val status = label("Groq se list la rahi hu...", 14f, 0xFFE8C8CC.toInt(), false)
         status.setPadding(dp(20), dp(8), dp(20), dp(8))
         v.addView(status)
         setScreen(page("AI Models", "home", v, true), "models")
@@ -706,16 +698,16 @@ class MainActivity : Activity() {
 
         val c1 = card()
         c1.addView(label("Groq connection", 17f, Color.WHITE, true))
-        c1.addView(label("console.groq.com se free key lo aur yahan paste karo.", 13f, 0xFFB9B9DD.toInt(), false))
+        c1.addView(label("console.groq.com se free key lo aur yahan paste karo.", 13f, 0xFFE8C8CC.toInt(), false))
         val et = EditText(this)
         et.setText(Store.key(this))
         et.hint = "gsk_..."
-        et.setHintTextColor(0xFF6F6A99.toInt())
+        et.setHintTextColor(0xFF9A6A70.toInt())
         et.setTextColor(Color.WHITE)
         et.setSingleLine(true)
         et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         c1.addView(et)
-        val res = label("", 13f, 0xFFFF9BD6.toInt(), false)
+        val res = label("", 13f, 0xFFFF8A8A.toInt(), false)
         c1.addView(btn("Save key") { Store.setKey(this, et.text.toString()); res.text = "Key save ho gayi"; toast("Saved") })
         c1.addView(btn("Test key") {
             val k = et.text.toString().trim()
@@ -734,12 +726,12 @@ class MainActivity : Activity() {
 
         val c2 = card()
         c2.addView(label("Voice (female)", 17f, Color.WHITE, true))
-        c2.addView(label("Speed", 13f, 0xFFB9B9DD.toInt(), false))
+        c2.addView(label("Speed", 13f, 0xFFE8C8CC.toInt(), false))
         val sp = SeekBar(this)
         sp.max = 100
         sp.progress = ((Store.speed(this) - 0.6f) / 0.8f * 100f).toInt().coerceIn(0, 100)
         c2.addView(sp)
-        c2.addView(label("Pitch", 13f, 0xFFB9B9DD.toInt(), false))
+        c2.addView(label("Pitch", 13f, 0xFFE8C8CC.toInt(), false))
         val pi = SeekBar(this)
         pi.max = 100
         pi.progress = ((Store.pitch(this) - 0.8f) / 0.7f * 100f).toInt().coerceIn(0, 100)
@@ -757,13 +749,13 @@ class MainActivity : Activity() {
         val c3 = card()
         c3.addView(label("Model", 17f, Color.WHITE, true))
         val cur = Store.model(this)
-        c3.addView(label(if (cur.isBlank()) "Auto" else cur, 13f, 0xFFB9B9DD.toInt(), false))
+        c3.addView(label(if (cur.isBlank()) "Auto" else cur, 13f, 0xFFE8C8CC.toInt(), false))
         c3.addView(btn("Model list dekho") { showModels() })
         v.addView(c3)
 
         val c5 = card()
         c5.addView(label("Hello Ruhi (background)", 17f, Color.WHITE, true))
-        c5.addView(label("App band ho tab bhi 'Hello Ruhi' bolte hi Ruhi sunegi. Neeche ke teeno setting zaroor allow karo.", 13f, 0xFFB9B9DD.toInt(), false))
+        c5.addView(label("App band ho tab bhi 'Hello Ruhi' bolte hi Ruhi sunegi. Neeche ke teeno setting zaroor allow karo.", 13f, 0xFFE8C8CC.toInt(), false))
         var tg: TextView? = null
         val wakeText = { if (Store.wake(this)) "Wake word: ON (band karne ke liye tap)" else "Wake word: OFF (chalu karne ke liye tap)" }
         tg = btn(wakeText()) {
@@ -802,7 +794,7 @@ class MainActivity : Activity() {
 
         val c6 = card()
         c6.addView(label("Locked phone mode", 17f, Color.WHITE, true))
-        c6.addView(label("Phone locked ho to Ruhi pehle password sunegi (abhi: sumit). Sahi password ke baad 2 minute tak kaam karegi, 3 galat try par 1 minute lock. App kholne wale kaam ke liye unlock karna padega.", 13f, 0xFFB9B9DD.toInt(), false))
+        c6.addView(label("Phone locked ho to Ruhi pehle password sunegi (abhi: sumit). Sahi password ke baad 2 minute tak kaam karegi, 3 galat try par 1 minute lock. App kholne wale kaam ke liye unlock karna padega.", 13f, 0xFFE8C8CC.toInt(), false))
         var lg: TextView? = null
         val lgText = { if (Store.gate(this)) "Password gate: ON (band karne ke liye tap)" else "Password gate: OFF (chalu karne ke liye tap)" }
         lg = btn(lgText()) {
@@ -812,7 +804,7 @@ class MainActivity : Activity() {
         c6.addView(lg)
         val pe = EditText(this)
         pe.hint = "Naya password (1 se 3 shabd)"
-        pe.setHintTextColor(0xFF6F6A99.toInt())
+        pe.setHintTextColor(0xFF9A6A70.toInt())
         pe.setTextColor(Color.WHITE)
         pe.setSingleLine(true)
         c6.addView(pe)
@@ -840,40 +832,21 @@ class MainActivity : Activity() {
         v.addView(c6)
 
         val c7 = card()
-        c7.addView(label("Hello Ruhi engine (Picovoice)", 17f, Color.WHITE, true))
-        c7.addView(label("console.picovoice.ai se free Access Key lo, 'Hello Ruhi' keyword train karke Android ki .ppn file download karo. Isse wake word bina beep ke, phone ke andar hi pehchana jata hai.", 13f, 0xFFB9B9DD.toInt(), false))
-        val pk = EditText(this)
-        pk.setText(Store.pvKey(this))
-        pk.hint = "Picovoice Access Key"
-        pk.setHintTextColor(0xFF6F6A99.toInt())
-        pk.setTextColor(Color.WHITE)
-        pk.setSingleLine(true)
-        pk.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        c7.addView(pk)
-        val pst = label(engineStatus(), 13f, 0xFFFF9BD6.toInt(), false)
-        c7.addView(btn("Access Key save karo") {
-            Store.setPvKey(this, pk.text.toString())
-            restartWake()
-            pst.text = engineStatus()
-            toast("Key save ho gayi")
-        })
-        c7.addView(btn(".ppn file chuno") {
-            val pi = Intent(Intent.ACTION_OPEN_DOCUMENT)
-            pi.addCategory(Intent.CATEGORY_OPENABLE)
-            pi.type = "*/*"
-            try { startActivityForResult(pi, 31) } catch (e: Exception) { toast("File picker nahi khula") }
-        })
+        c7.addView(label("Hello Ruhi engine (Vosk)", 17f, Color.WHITE, true))
+        c7.addView(label("Wake word phone ke andar hi, bina key aur bina beep ke pehchana jata hai. Kuch daalne ki zarurat nahi.", 13f, 0xFFE8C8CC.toInt(), false))
+        val pst = label(engineStatus(), 13f, 0xFFFF8A8A.toInt(), false)
         c7.addView(btn("Engine dobara chalu karo") {
             restartWake()
             main.postDelayed({ pst.text = engineStatus() }, 1500)
+            main.postDelayed({ pst.text = engineStatus() }, 7000)
         })
         c7.addView(pst)
         v.addView(c7)
 
         val c8 = card()
         c8.addView(label("Phone control aur notifications (Part 4B)", 17f, Color.WHITE, true))
-        c8.addView(label("Accessibility se Ruhi back, home, scroll, screenshot, tap, screen padhna, WhatsApp auto-send aur WiFi/Bluetooth on-off kar sakti hai. Notification access se naye notification padhna aur reply karna hota hai. Android 13+ par pehle App info mein teen dot dabakar 'Allow restricted settings' karna padta hai.", 13f, 0xFFB9B9DD.toInt(), false))
-        val st = label(accessStatus(), 13f, 0xFFFF9BD6.toInt(), false)
+        c8.addView(label("Accessibility se Ruhi back, home, scroll, screenshot, tap, screen padhna, WhatsApp auto-send aur WiFi/Bluetooth on-off kar sakti hai. Notification access se naye notification padhna aur reply karna hota hai. Android 13+ par pehle App info mein teen dot dabakar 'Allow restricted settings' karna padta hai.", 13f, 0xFFE8C8CC.toInt(), false))
+        val st = label(accessStatus(), 13f, 0xFFFF8A8A.toInt(), false)
         c8.addView(btn("Accessibility service: allow") {
             try { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) { toast("Settings nahi khuli") }
         })
@@ -901,7 +874,7 @@ class MainActivity : Activity() {
         v.addView(c8)
 
         val c4 = card()
-        c4.addView(label("Ruhi AI v16 (Part 4B) \u2022 Made for Sumit", 14f, 0xFFB9B9DD.toInt(), false))
+        c4.addView(label("Ruhi AI v17 \u2022 Made by Sumit Kashyap", 14f, 0xFFE8C8CC.toInt(), false))
         v.addView(c4)
         setScreen(page("Settings", "settings", v, true), "settings")
         accTv = st

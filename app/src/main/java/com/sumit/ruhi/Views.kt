@@ -57,11 +57,11 @@ class StateView(c: Context) : View(c) {
     private val cover = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD }
-    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB9B9DD.toInt(); textAlign = Paint.Align.CENTER }
+    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE8C8CC.toInt(); textAlign = Paint.Align.CENTER }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        val dark = 0xFF02020A.toInt()
-        val sh = RadialGradient(0f, 0f, 1f, intArrayOf(dark, dark, 0x0002020A), floatArrayOf(0f, 0.9f, 1f), Shader.TileMode.CLAMP)
+        val dark = 0xFF050102.toInt()
+        val sh = RadialGradient(0f, 0f, 1f, intArrayOf(dark, dark, 0x00050102), floatArrayOf(0f, 0.9f, 1f), Shader.TileMode.CLAMP)
         val m = Matrix()
         m.setScale(w / 2f, h / 2f)
         m.postTranslate(w / 2f, h / 2f)
@@ -69,7 +69,7 @@ class StateView(c: Context) : View(c) {
         cover.shader = sh
         bar.strokeWidth = w * 0.017f
         bar.shader = LinearGradient(w * 0.12f, 0f, w * 0.88f, 0f,
-            intArrayOf(0xFF38BDF8.toInt(), 0xFF7C6CFF.toInt(), 0xFFB455F7.toInt(), 0xFF38BDF8.toInt()), null, Shader.TileMode.CLAMP)
+            intArrayOf(0xFFFF5A5F.toInt(), 0xFFE0112B.toInt(), 0xFFFF2D3D.toInt(), 0xFFFF5A5F.toInt()), null, Shader.TileMode.CLAMP)
         big.textSize = h * 0.15f
         small.textSize = h * 0.10f
     }
@@ -107,7 +107,7 @@ class GlowView(c: Context) : View(c) {
     var on = false
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = 0xFF8B7BFF.toInt()
+        color = 0xFFFF4A58.toInt()
         maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL)
     }
 
@@ -124,34 +124,27 @@ class GlowView(c: Context) : View(c) {
     }
 }
 
-/** Loading screen ka progress bar (design ke bar ke upar). */
+/** Loading screen ka ghoomta hua red ring + "Loading..." (design ke baked spinner ki jagah). */
 class ProgressView(c: Context) : View(c) {
     var p = 0f
-    var label = "Initializing Ruhi AI..."
-    private val bg = Paint().apply { color = 0xFF00031C.toInt() }
+    var label = "Loading... \u26A1"
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFF4A0A12.toInt() }
+    private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFFE01B2B.toInt() }
     private val tx = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFF3F37B8.toInt() }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(cv: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        cv.drawRect(0f, 0f, w, h, bg)
-        tx.textSize = h * 0.25f
-        tx.textAlign = Paint.Align.CENTER
-        cv.drawText(label, w * 0.50f, h * 0.36f, tx)
-        val l = w * 0.03f
-        val r = w * 0.84f
-        val t = h * 0.58f
-        val b = h * 0.84f
-        track.strokeWidth = h * 0.03f
-        val rr = (b - t) / 2f
-        cv.drawRoundRect(RectF(l, t, r, b), rr, rr, track)
-        fill.shader = LinearGradient(l, 0f, r, 0f, 0xFF8B4DF6.toInt(), 0xFF5AA9FF.toInt(), Shader.TileMode.CLAMP)
-        val e = l + (r - l) * p.coerceIn(0f, 1f)
-        if (e > l + rr) cv.drawRoundRect(RectF(l + 3f, t + 3f, e - 3f, b - 3f), rr, rr, fill)
-        tx.textSize = h * 0.26f
-        cv.drawText("${(p * 100).toInt()}%", w * 0.92f, h * 0.84f, tx)
+        val cx = w / 2f
+        val cy = h * 0.36f
+        val r = h * 0.24f
+        track.strokeWidth = h * 0.045f
+        arc.strokeWidth = h * 0.045f
+        cv.drawCircle(cx, cy, r, track)
+        val rect = RectF(cx - r, cy - r, cx + r, cy + r)
+        cv.drawArc(rect, p * 1080f - 90f, 110f + 60f * sin(p * 12.566f), false, arc)
+        tx.textSize = h * 0.15f
+        cv.drawText(label, cx, h * 0.90f, tx)
     }
 }
 
@@ -176,7 +169,7 @@ class PillButton(c: Context, private val label: String) : View(c) {
     override fun onDraw(cv: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        fill.shader = LinearGradient(0f, 0f, w, 0f, 0xFF7C4DFF.toInt(), 0xFFC13DFF.toInt(), Shader.TileMode.CLAMP)
+        fill.shader = LinearGradient(0f, 0f, w, 0f, 0xFFE0112B.toInt(), 0xFFFF3B4A.toInt(), Shader.TileMode.CLAMP)
         fill.alpha = if (isPressed) 150 else 255
         edge.strokeWidth = h * 0.02f
         val r = RectF(2f, 2f, w - 2f, h - 2f)
