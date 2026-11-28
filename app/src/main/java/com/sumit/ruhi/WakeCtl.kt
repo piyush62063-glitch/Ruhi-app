@@ -18,6 +18,7 @@ object WakeCtl {
     /** App ki apni voice screen mic use kar rahi ho to true, tab background sunna rukta hai. */
     @Volatile var paused: Boolean = false
         set(v) {
+            if (field == v) return
             field = v
             WakeService.instance?.pauseChanged()
         }

@@ -28,6 +28,7 @@ class WakeEngine(
         private const val MARK = "vosk-model.ok"
         private const val RATE = 16000
         private const val CHUNK = 800            // 50 ms
+        private const val PRE = 10               // bolne se pehle ka 500 ms bhi model ko diya jata hai
 
         @Volatile var lastError: String = ""
         @Volatile var modelReady: Boolean = false
@@ -44,11 +45,38 @@ class WakeEngine(
             "ran", "rich", "ride", "rock", "room", "round", "rule", "rice", "race", "rain", "red", "record"
         )
 
+        private val GREETS = setOf("hello", "hallo", "hullo", "helo", "halo", "hey", "hi", "hay")
+
+        private fun lev(a: String, b: String): Int {
+            var prev = IntArray(b.length + 1) { it }
+            for (i in 1..a.length) {
+                val cur = IntArray(b.length + 1)
+                cur[0] = i
+                for (j in 1..b.length) {
+                    cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+                }
+                prev = cur
+            }
+            return prev[b.length]
+        }
+
         fun matches(text: String): Boolean {
             val t = text.lowercase()
             if (NAME.containsMatchIn(t)) return true
-            val m = WAKE.find(t) ?: return false
-            return !NOT_NAME.contains(m.groupValues[1])
+            val m = WAKE.find(t)
+            if (m != null && !NOT_NAME.contains(m.groupValues[1])) return true
+            // model ne naam tod diya ho (rue he, roo hee, ruhee...) to bhi pakdo
+            val w = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
+            for (i in 0 until w.size - 1) {
+                if (!GREETS.contains(w[i])) continue
+                val one = w[i + 1]
+                val two = if (i + 2 < w.size) one + w[i + 2] else ""
+                for (c in arrayOf(one, two)) {
+                    if (c.length < 3 || NOT_NAME.contains(c)) continue
+                    if (lev(c, "ruhi") <= 1 || lev(c, "roohi") <= 2) return true
+                }
+            }
+            return false
         }
 
         fun ready(c: Context): Boolean {
@@ -141,9 +169,12 @@ class WakeEngine(
         stop()
     }
 
+    fun isRunning(): Boolean = running
+    fun isLoading(): Boolean = loading
+
     private fun fail(msg: String) {
         lastError = msg
-        failUntil = SystemClock.uptimeMillis() + 60000L
+        failUntil = SystemClock.uptimeMillis() + 4000L   // mic busy jaisi chhoti dikkat: jaldi dobara koshish
     }
 
     private fun loop() {
@@ -166,19 +197,19 @@ class WakeEngine(
             val pre = ArrayList<ShortArray>()
             var active = false
             var lastVoice = 0L
-            var floor = 150f
+            var floor = 80f
             val born = SystemClock.uptimeMillis()
             while (running) {
                 val n = a.read(buf, 0, CHUNK)
                 if (n < 0) throw IllegalStateException("Mic read error $n")
-                if (n == 0) continue
+                if (n == 0) { try { Thread.sleep(5) } catch (e: Exception) { }; continue }
                 var s = 0.0
                 for (i in 0 until n) { val v = buf[i].toInt(); s += (v * v).toDouble() }
                 val rms = sqrt(s / n).toFloat()
                 val now = SystemClock.uptimeMillis()
-                val thr = maxOf(320f, floor * 2.8f)
+                val thr = maxOf(170f, floor * 2.4f)
                 if (rms > thr) lastVoice = now
-                val voiced = lastVoice != 0L && now - lastVoice < 1500L
+                val voiced = lastVoice != 0L && now - lastVoice < 1200L
                 if (voiced) {
                     if (!active) {
                         active = true
@@ -192,7 +223,7 @@ class WakeEngine(
                     if (active) { active = false; r.reset() }
                     floor = floor * 0.98f + rms * 0.02f
                     pre.add(buf.copyOf(n))
-                    if (pre.size > 4) pre.removeAt(0)
+                    if (pre.size > PRE) pre.removeAt(0)
                 }
             }
         } catch (e: Throwable) {

@@ -75,6 +75,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         if (screen == "voice") stopVoice()
+        WakeCtl.paused = false
     }
 
     override fun onResume() {
@@ -112,6 +113,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        voiceOn = false
+        WakeCtl.paused = false
         try { rec?.destroy() } catch (e: Exception) { }
         speaker.shutdown()
     }

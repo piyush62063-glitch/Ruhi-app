@@ -86,6 +86,19 @@ class WakeService : Service() {
 
     private val loopRun = Runnable { listen() }
 
+    // Watchdog: har 4 second mein dekhta hai ki "Hello Ruhi" sunna kahin ruk to nahi gaya
+    private val watchdog = object : Runnable {
+        override fun run() {
+            if (running) {
+                try {
+                    if (mode == 0 && !WakeCtl.paused && !WakeCtl.session && rec == null &&
+                        porc?.isRunning() != true && porc?.isLoading() != true) listen()
+                } catch (e: Exception) { }
+                main.postDelayed(this, 4000)
+            }
+        }
+    }
+
     // Part 4B: phone unlock hote hi rukha hua command chalane ke liye
     private val userPresent = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) { runHandoff() }
@@ -127,6 +140,8 @@ class WakeService : Service() {
             } catch (e: Exception) { }
             mode = 0
             retry(600)
+            main.removeCallbacks(watchdog)
+            main.postDelayed(watchdog, 4000)
         }
         return START_STICKY
     }
@@ -135,6 +150,7 @@ class WakeService : Service() {
         running = false
         instance = null
         main.removeCallbacks(loopRun)
+        main.removeCallbacks(watchdog)
         main.removeCallbacks(unmuteRun)
         try { unregisterReceiver(userPresent) } catch (e: Exception) { }
         destroyRec()
